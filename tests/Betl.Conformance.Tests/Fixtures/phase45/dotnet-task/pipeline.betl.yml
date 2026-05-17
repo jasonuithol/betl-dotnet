@@ -1,0 +1,19 @@
+betl: 1
+name: phase5-dotnet-task
+description: Roslyn-compiled BetlTask writes a known string to ${params.out}.
+
+parameters:
+  out: { type: string, required: true }
+
+pipeline:
+  - id: t
+    type: dotnet.task
+    source: |
+      public class UserTask : BetlTask
+      {
+          public override void Execute(BetlTaskContext ctx)
+          {
+              var path = (string)ctx.Params["out"]!;
+              System.IO.File.WriteAllText(path, "hello from dotnet.task");
+          }
+      }

@@ -11,6 +11,8 @@
     <ProjectReference Include="..\Betl.Components\Betl.Components.csproj" />
     <ProjectReference Include="..\Betl.Expressions.SsisExpr\Betl.Expressions.SsisExpr.csproj" />
     <ProjectReference Include="..\Betl.Providers.Sql\Betl.Providers.Sql.csproj" />
+    <ProjectReference Include="..\Betl.Providers.Dotnet\Betl.Providers.Dotnet.csproj" />
+    <ProjectReference Include="..\Betl.Ssis.Shim\Betl.Ssis.Shim.csproj" />
   </ItemGroup>
 
 </Project>

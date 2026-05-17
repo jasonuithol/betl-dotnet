@@ -1,0 +1,36 @@
+betl: 1
+name: phase5-dotnet-script
+description: betl.gen_int64 -> Roslyn-compiled dotnet.script -> csv.write.
+
+parameters:
+  out: { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 5
+        column: n
+        start: 1
+      - id: doubled
+        type: dotnet.script
+        from: gen
+        lang: csharp
+        output_schema:
+          - { name: n,       type: int64 }
+          - { name: doubled, type: int64 }
+        source: |
+          public class UserScript : BetlScript
+          {
+              public override IEnumerable<object?[]> OnRow(IReadOnlyList<object?> row)
+              {
+                  long n = (long)row[0]!;
+                  yield return new object?[] { n, n * 2 };
+              }
+          }
+      - id: write
+        type: csv.write
+        from: doubled
+        path: ${params.out}

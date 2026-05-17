@@ -121,6 +121,14 @@ internal sealed class PipelineParser
             "csv.write"          => ParseCsvWriteBody(m, id, c),
             "json.read"          => ParseJsonReadBody(m, id, c),
             "json.write"         => ParseJsonWriteBody(m, id, c),
+            "arrow.read"         => new ArrowReadStep { Id = id, Path = ReqStr(m, "path", c) },
+            "arrow.write"        => new ArrowWriteStep
+            {
+                Id = id,
+                From = ReqStr(m, "from", c),
+                Path = ReqStr(m, "path", c),
+                BatchSize = OptInt(m, "batch_size", c) ?? 1024,
+            },
             "filter"             => ParseFilterBody(m, id, c),
             "map"                => ParseMapBody(m, id, c),
             "distinct"           => ParseDistinctBody(m, id, c),
@@ -142,6 +150,9 @@ internal sealed class PipelineParser
             "http.get"           => ParseHttpGetBody(m, id, c),
             "http.post"          => ParseHttpPostBody(m, id, c),
             "smtp.send"          => ParseSmtpSendBody(m, id, c),
+            "dotnet.task"        => ParseDotnetTaskBody(m, id, c),
+            "dotnet.script"      => ParseDotnetScriptBody(m, id, c),
+            "dotnet.pipelinecomponent" => ParseDotnetPipelineComponentBody(m, id, c),
             "betl.gen_int64"     => ParseGenInt64Body(m, id, c),
             "betl.gen_strings"   => ParseGenStringsBody(m, id, c),
             "betl.count_rows"    => ParseCountRowsBody(m, id, c),
@@ -741,6 +752,43 @@ internal sealed class PipelineParser
             Subject = ReqStr(m, "subject", c),
             Body = body,
             BodyFile = bodyFile,
+        };
+    }
+
+    private DotnetTaskStep ParseDotnetTaskBody(YamlMappingNode m, string id, HashSet<string> c) => new()
+    {
+        Id = id,
+        Lang = OptStr(m, "lang", c) ?? "csharp",
+        Source = ReqStr(m, "source", c),
+    };
+
+    private DotnetScriptStep ParseDotnetScriptBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var from = ReqStr(m, "from", c);
+        var lang = OptStr(m, "lang", c) ?? "csharp";
+        var source = ReqStr(m, "source", c);
+        c.Add("output_schema");
+        var schemaNode = GetChild(m, "output_schema") as YamlSequenceNode
+            ?? throw new PipelineLoadException($"dotnet.script '{id}': 'output_schema' is required.");
+        return new DotnetScriptStep
+        {
+            Id = id, From = from, Lang = lang, Source = source,
+            OutputSchema = ParseSchema(schemaNode),
+        };
+    }
+
+    private DotnetPipelineComponentStep ParseDotnetPipelineComponentBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var from = ReqStr(m, "from", c);
+        var lang = OptStr(m, "lang", c) ?? "csharp";
+        var source = ReqStr(m, "source", c);
+        c.Add("output_schema");
+        var schemaNode = GetChild(m, "output_schema") as YamlSequenceNode
+            ?? throw new PipelineLoadException($"dotnet.pipelinecomponent '{id}': 'output_schema' is required.");
+        return new DotnetPipelineComponentStep
+        {
+            Id = id, From = from, Lang = lang, Source = source,
+            OutputSchema = ParseSchema(schemaNode),
         };
     }
 

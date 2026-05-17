@@ -2,9 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Betl.Core\Betl.Core.csproj" />
-    <ProjectReference Include="..\Betl.Components\Betl.Components.csproj" />
-    <ProjectReference Include="..\Betl.Providers.Sql\Betl.Providers.Sql.csproj" />
-    <ProjectReference Include="..\Betl.Providers.Dotnet\Betl.Providers.Dotnet.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -4,6 +4,7 @@ using Betl.Components;
 using Betl.Components.Generators;
 using Betl.Components.Tasks;
 using Betl.Core;
+using Betl.Providers.Dotnet;
 using Betl.Providers.Sql;
 
 namespace Betl.Runtime;
@@ -55,6 +56,7 @@ public sealed partial class Executor
                 hp.Headers?.Select(_params.Substitute).ToList(), ParseTimeout(hp.Timeout))); break;
             case SmtpSendStep sm:    RunSmtp(sm); break;
             case SqlExecuteStep se:  RunSqlExecute(se); break;
+            case DotnetTaskStep dt:  RunDotnetTask(dt); break;
             default:
                 throw new BetlException($"Top-level step type '{step.GetType().Name}' is not supported.");
         }
@@ -83,6 +85,12 @@ public sealed partial class Executor
             step.Cc?.Select(_params.Substitute).ToList(),
             _params.Substitute(step.Subject),
             body));
+    }
+
+    private void RunDotnetTask(DotnetTaskStep step)
+    {
+        var resolved = _pipeline.Parameters.Keys.ToDictionary(k => k, k => _params.Get(k));
+        RunTask(new DotnetTask(step, resolved));
     }
 
     private void RunSqlExecute(SqlExecuteStep step)
@@ -134,6 +142,10 @@ public sealed partial class Executor
                 case JsonReadStep jr:
                     RegisterPort(ports, jr.Id, new JsonReadComponent(jr, _params.Substitute(jr.Path)));
                     Log($"   {jr.Id}: json.read {_params.Substitute(jr.Path)}");
+                    break;
+                case ArrowReadStep ar:
+                    RegisterPort(ports, ar.Id, new ArrowReadComponent(ar, _params.Substitute(ar.Path)));
+                    Log($"   {ar.Id}: arrow.read {_params.Substitute(ar.Path)}");
                     break;
                 case BetlGenInt64Step gi:
                     RegisterPort(ports, gi.Id, new BetlGenInt64Component(gi));
@@ -219,6 +231,20 @@ public sealed partial class Executor
                     Log($"   {lk.Id}: lookup connection={lk.Connection} table={lk.Table}");
                     break;
                 }
+                case DotnetScriptStep ds:
+                {
+                    var u = ResolveFrom(ports, ds.From, ds.Id, "dotnet.script.from");
+                    RegisterPort(ports, ds.Id, new DotnetScriptComponent(ds, u));
+                    Log($"   {ds.Id}: dotnet.script ({ds.OutputSchema.Columns.Count} out cols)");
+                    break;
+                }
+                case DotnetPipelineComponentStep dpc:
+                {
+                    var u = ResolveFrom(ports, dpc.From, dpc.Id, "dotnet.pipelinecomponent.from");
+                    RegisterPort(ports, dpc.Id, new DotnetPipelineComponent(dpc, u));
+                    Log($"   {dpc.Id}: dotnet.pipelinecomponent ({dpc.OutputSchema.Columns.Count} out cols)");
+                    break;
+                }
 
                 // ----- N-in 1-out ----------------------------------------------
                 case UnionStep un:
@@ -273,6 +299,13 @@ public sealed partial class Executor
                     Log($"   {jw.Id}: json.write {_params.Substitute(jw.Path)}");
                     break;
                 }
+                case ArrowWriteStep aw:
+                {
+                    var u = ResolveFrom(ports, aw.From, aw.Id, "arrow.write.from");
+                    sinks.Add((new ArrowWriteComponent(aw, _params.Substitute(aw.Path)), u));
+                    Log($"   {aw.Id}: arrow.write {_params.Substitute(aw.Path)}");
+                    break;
+                }
                 case BetlCountRowsStep cr:
                 {
                     var u = ResolveFrom(ports, cr.From, cr.Id, "betl.count_rows.from");
@@ -318,11 +351,14 @@ public sealed partial class Executor
         return (provider, _params.Substitute(conn.Dsn));
     }
 
+    private static readonly bool ParallelEnabled = QueuedDataComponent.ParallelEnabledByDefault();
+    private static readonly int ParallelDepth = QueuedDataComponent.DefaultDepth();
+
     private static void RegisterPort(Dictionary<string, IDataComponent> ports, string key, IDataComponent component)
     {
         if (ports.ContainsKey(key))
             throw new BetlException($"Duplicate port id '{key}' in this dataflow.");
-        ports[key] = component;
+        ports[key] = ParallelEnabled ? new QueuedDataComponent(component, ParallelDepth) : component;
     }
 
     private static IDataComponent ResolveFrom(

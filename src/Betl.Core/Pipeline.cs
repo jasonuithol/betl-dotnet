@@ -81,6 +81,18 @@ public sealed record JsonWriteStep : Step
     public JsonFormat Format { get; init; } = JsonFormat.Ndjson;
 }
 
+public sealed record ArrowReadStep : Step
+{
+    public required string Path { get; init; }
+}
+
+public sealed record ArrowWriteStep : Step
+{
+    public required string From { get; init; }
+    public required string Path { get; init; }
+    public int BatchSize { get; init; } = 1024;
+}
+
 public sealed record FilterStep : Step
 {
     public required string From { get; init; }
@@ -304,6 +316,29 @@ public sealed record HttpPostStep : Step
     public string? Body { get; init; }
     public string? BodyFile { get; init; }
     public IReadOnlyList<string>? Headers { get; init; }
+}
+
+public sealed record DotnetTaskStep : Step
+{
+    public required string Source { get; init; }
+    public string Lang { get; init; } = "csharp";
+}
+
+public sealed record DotnetScriptStep : Step
+{
+    public required string From { get; init; }
+    public required string Source { get; init; }
+    public string Lang { get; init; } = "csharp";
+    /// <summary>Required declared output schema — script output type can't be inferred.</summary>
+    public required Schema OutputSchema { get; init; }
+}
+
+public sealed record DotnetPipelineComponentStep : Step
+{
+    public required string From { get; init; }
+    public required string Source { get; init; }
+    public string Lang { get; init; } = "csharp";
+    public required Schema OutputSchema { get; init; }
 }
 
 public sealed record SmtpSendStep : Step

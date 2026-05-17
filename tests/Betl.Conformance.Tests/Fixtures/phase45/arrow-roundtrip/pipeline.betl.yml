@@ -1,0 +1,36 @@
+betl: 1
+name: arrow-roundtrip
+description: csv -> arrow IPC file -> csv round-trip preserving column values.
+
+parameters:
+  in_csv:     { type: string, required: true }
+  tmp_arrow:  { type: string, required: true }
+  out_csv:    { type: string, required: true }
+
+pipeline:
+  - id: write_arrow
+    type: dataflow
+    steps:
+      - id: read
+        type: csv.read
+        path: ${params.in_csv}
+        schema:
+          - { name: id,    type: int64 }
+          - { name: label, type: string }
+          - { name: val,   type: float64 }
+      - id: aw
+        type: arrow.write
+        from: read
+        path: ${params.tmp_arrow}
+
+  - id: read_arrow
+    type: dataflow
+    after: [write_arrow]
+    steps:
+      - id: ar
+        type: arrow.read
+        path: ${params.tmp_arrow}
+      - id: out
+        type: csv.write
+        from: ar
+        path: ${params.out_csv}
