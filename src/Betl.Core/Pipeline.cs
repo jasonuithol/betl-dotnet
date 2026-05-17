@@ -189,6 +189,10 @@ public sealed record PivotStep : Step
     public required IReadOnlyList<string> PivotKeys { get; init; }
     public required string NameColumn { get; init; }
     public required string ValueColumn { get; init; }
+    /// <summary>Optional explicit pivot-value list. If set, output schema is
+    /// (pivot_keys + these names) known at construction time and rows whose
+    /// name_col value isn't in the list are dropped.</summary>
+    public IReadOnlyList<string>? PivotValues { get; init; }
 }
 
 public sealed record UnpivotStep : Step
@@ -339,6 +343,10 @@ public sealed record DotnetPipelineComponentStep : Step
     public required string Source { get; init; }
     public string Lang { get; init; } = "csharp";
     public required Schema OutputSchema { get; init; }
+    /// <summary>SSIS async transform: separate input + output buffers, user calls AddRow.</summary>
+    public bool Async { get; init; }
+    /// <summary>Emit a second `error_out` port for rows tagged via DirectErrorRow. Sync mode only.</summary>
+    public bool ErrorOutput { get; init; }
 }
 
 public sealed record SmtpSendStep : Step

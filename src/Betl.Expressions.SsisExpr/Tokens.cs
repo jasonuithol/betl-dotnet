@@ -7,6 +7,7 @@ internal enum TokenKind
     Plus, Minus, Star, Slash, Percent,
     Bang, EqEq, BangEq, Lt, LtEq, Gt, GtEq,
     AmpAmp, PipePipe,
+    QMark, Colon,
     Identifier, BracketedIdent, StringLit, IntLit, FloatLit,
 }
 

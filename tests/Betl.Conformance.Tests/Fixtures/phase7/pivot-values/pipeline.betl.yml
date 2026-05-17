@@ -1,0 +1,33 @@
+betl: 1
+name: phase7-pivot-values
+description: >
+  pivot with explicit pivot_values. Output schema is known at construction
+  (no eager-discovery materialise). Rows whose name_col value isn't listed
+  are silently dropped. Column order in output follows the declared list.
+
+parameters:
+  in:  { type: string, required: true }
+  out: { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: read
+        type: csv.read
+        path: ${params.in}
+        schema:
+          - { name: region, type: string }
+          - { name: month,  type: string }
+          - { name: amount, type: float64 }
+      - id: piv
+        type: pivot
+        from: read
+        pivot_keys: [region]
+        name_col: month
+        value_col: amount
+        pivot_values: [feb, jan]
+      - id: write
+        type: csv.write
+        from: piv
+        path: ${params.out}

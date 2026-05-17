@@ -1,0 +1,57 @@
+betl: 1
+name: phase7-ssis-async
+description: >
+  Async-mode SSIS PipelineComponent: user code uses PrimeOutput's output buffer,
+  calls AddRow() + Set*. This pattern is how SSIS aggregators / fan-in / windowed
+  components are written.
+
+parameters:
+  out: { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 5
+        column: n
+        start: 1
+      - id: pc
+        type: dotnet.pipelinecomponent
+        from: gen
+        async: true
+        output_schema:
+          - { name: total, type: int64 }
+          - { name: count, type: int64 }
+        source: |
+          public class Aggregator : Microsoft.SqlServer.Dts.Pipeline.PipelineComponent
+          {
+              long _sum;
+              long _count;
+              Microsoft.SqlServer.Dts.Pipeline.PipelineBuffer _out = null!;
+
+              public override void PrimeOutput(int outputs, int[] outputIDs,
+                  Microsoft.SqlServer.Dts.Pipeline.PipelineBuffer[] buffers)
+              {
+                  _out = buffers[0];
+              }
+
+              public override void ProcessInput(int inputID,
+                  Microsoft.SqlServer.Dts.Pipeline.PipelineBuffer buffer)
+              {
+                  while (buffer.NextRow())
+                  {
+                      _sum += buffer.GetInt64(0);
+                      _count++;
+                  }
+                  // Emit aggregate after consuming all input.
+                  _out.AddRow();
+                  _out.SetInt64(0, _sum);
+                  _out.SetInt64(1, _count);
+              }
+          }
+      - id: write
+        type: csv.write
+        from: pc
+        path: ${params.out}

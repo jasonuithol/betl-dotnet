@@ -1,0 +1,46 @@
+betl: 1
+name: phase7-ssis-error-output
+description: >
+  Sync + error_output: DirectErrorRow routes odd rows to the error_out port.
+  The error_out schema is output_schema + ErrorCode (int32) + ErrorColumn (int32).
+
+parameters:
+  out_ok:  { type: string, required: true }
+  out_err: { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 6
+        column: n
+        start: 1
+      - id: pc
+        type: dotnet.pipelinecomponent
+        from: gen
+        error_output: true
+        output_schema:
+          - { name: n, type: int64 }
+        source: |
+          public class OddRouter : Microsoft.SqlServer.Dts.Pipeline.PipelineComponent
+          {
+              public override void ProcessInput(int inputID,
+                  Microsoft.SqlServer.Dts.Pipeline.PipelineBuffer buffer)
+              {
+                  while (buffer.NextRow())
+                  {
+                      var n = buffer.GetInt64(0);
+                      if ((n & 1) == 1) buffer.DirectErrorRow(0, 42, 0);
+                  }
+              }
+          }
+      - id: ok
+        type: csv.write
+        from: pc
+        path: ${params.out_ok}
+      - id: bad
+        type: csv.write
+        from: pc:error_out
+        path: ${params.out_err}

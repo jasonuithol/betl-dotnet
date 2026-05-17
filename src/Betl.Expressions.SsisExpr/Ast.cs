@@ -20,3 +20,7 @@ internal enum BinaryOp
 internal sealed record BinaryNode(BinaryOp Op, AstNode Left, AstNode Right) : AstNode;
 
 internal sealed record FunctionCallNode(string Name, IReadOnlyList<AstNode> Args) : AstNode;
+
+internal sealed record TernaryNode(AstNode Condition, AstNode Then, AstNode Else) : AstNode;
+
+internal sealed record CastNode(string TypeName, IReadOnlyList<long> Args, AstNode Operand) : AstNode;

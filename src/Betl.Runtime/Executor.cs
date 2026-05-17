@@ -241,8 +241,16 @@ public sealed partial class Executor
                 case DotnetPipelineComponentStep dpc:
                 {
                     var u = ResolveFrom(ports, dpc.From, dpc.Id, "dotnet.pipelinecomponent.from");
-                    RegisterPort(ports, dpc.Id, new DotnetPipelineComponent(dpc, u));
-                    Log($"   {dpc.Id}: dotnet.pipelinecomponent ({dpc.OutputSchema.Columns.Count} out cols)");
+                    var dpcDriver = new DotnetPipelineComponent(dpc, u);
+                    foreach (var (name, port) in dpcDriver.Outputs)
+                    {
+                        var key = name == "out" ? dpc.Id : $"{dpc.Id}:{name}";
+                        RegisterPort(ports, key, port);
+                    }
+                    Log($"   {dpc.Id}: dotnet.pipelinecomponent " +
+                        $"({dpc.OutputSchema.Columns.Count} out cols" +
+                        (dpc.Async ? ", async" : "") +
+                        (dpc.ErrorOutput ? ", error_output" : "") + ")");
                     break;
                 }
 

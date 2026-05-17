@@ -1,3 +1,4 @@
+using Apache.Arrow.Types;
 using Betl.Components;
 using Betl.Core;
 using Betl.Ssis.Shim.PipelineComponent;
@@ -9,26 +10,29 @@ namespace Betl.Providers.Dotnet;
 
 /// <summary>
 /// Hosts a user-supplied PipelineComponent subclass. The user can derive from
-/// either <see cref="BetlPipelineComponent"/> (simpler managed-only base —
-/// recommended for new code) or <see cref="ShimPipelineComponent"/>
-/// (full SSIS-compat shim — for porting existing SSIS source verbatim).
-/// The driver compiles the source via Roslyn, detects which base, and drives
-/// the appropriate lifecycle.
+/// either <see cref="BetlPipelineComponent"/> (simpler managed-only base) or
+/// <see cref="ShimPipelineComponent"/> (full SSIS-compat shim). Supports
+/// three modes: sync (default), async (separate input/output buffers, AddRow),
+/// and sync + error_output (DirectErrorRow routes rows to a second port).
+///
+/// Exposes <see cref="Outputs"/> — always contains the default "out" port,
+/// plus "error_out" when <c>error_output: true</c>. The executor registers
+/// each by name.
 /// </summary>
-public sealed class DotnetPipelineComponent : IDataComponent
+public sealed class DotnetPipelineComponent
 {
+    private readonly DotnetPipelineComponentStep _step;
     private readonly IDataComponent _upstream;
     private readonly Type _userType;
     private readonly bool _isSsis;
 
-    public string Id { get; }
-    public Schema OutputSchema { get; }
+    /// <summary>Default + optional error_out ports.</summary>
+    public IReadOnlyList<KeyValuePair<string, IDataComponent>> Outputs { get; }
 
     public DotnetPipelineComponent(DotnetPipelineComponentStep step, IDataComponent upstream)
     {
-        Id = step.Id;
+        _step = step;
         _upstream = upstream;
-        OutputSchema = step.OutputSchema;
 
         if (step.Lang != "csharp")
             throw new BetlException($"dotnet.pipelinecomponent '{step.Id}': only 'csharp' supported (got '{step.Lang}').");
@@ -39,20 +43,64 @@ public sealed class DotnetPipelineComponent : IDataComponent
             $"dotnet.pipelinecomponent '{step.Id}'");
         _userType = type;
         _isSsis = matched == typeof(ShimPipelineComponent);
+
+        if (step.Async && step.ErrorOutput)
+            throw new BetlException(
+                $"dotnet.pipelinecomponent '{step.Id}': async + error_output is not supported.");
+
+        if (step.Async && !_isSsis)
+            throw new BetlException(
+                $"dotnet.pipelinecomponent '{step.Id}': async mode requires the SSIS PipelineComponent base " +
+                "(Microsoft.SqlServer.Dts.Pipeline.PipelineComponent), not BetlPipelineComponent.");
+
+        // Lazy so both ports (out + error_out) share a single drive of the
+        // user's ProcessInput. First port to call Stream() materialises.
+        var lazyResult = new Lazy<(IReadOnlyList<Row> Normal, IReadOnlyList<Row> Errors)>(Drive);
+
+        var outs = new List<KeyValuePair<string, IDataComponent>>
+        {
+            KeyValuePair.Create("out",
+                (IDataComponent)new ResultPort(step.Id, step.OutputSchema, () => lazyResult.Value.Normal)),
+        };
+        if (step.ErrorOutput)
+        {
+            var errSchema = BuildErrorSchema(step.OutputSchema);
+            outs.Add(KeyValuePair.Create("error_out",
+                (IDataComponent)new ResultPort($"{step.Id}:error_out", errSchema, () => lazyResult.Value.Errors)));
+        }
+        Outputs = outs;
     }
 
-    public IEnumerable<Row> Stream()
+    private static Schema BuildErrorSchema(Schema baseSchema)
+    {
+        var cols = new List<Column>(baseSchema.Columns.Count + 2);
+        cols.AddRange(baseSchema.Columns);
+        cols.Add(new Column { Name = "ErrorCode",   ArrowType = Int32Type.Default, Nullable = false });
+        cols.Add(new Column { Name = "ErrorColumn", ArrowType = Int32Type.Default, Nullable = false });
+        return new Schema { Columns = cols };
+    }
+
+    private sealed class ResultPort(string id, Schema schema, Func<IEnumerable<Row>> source) : IDataComponent
+    {
+        public string Id { get; } = id;
+        public Schema OutputSchema { get; } = schema;
+        public IEnumerable<Row> Stream() => source();
+    }
+
+    // ----- single drive that fills both ports -----
+
+    private (IReadOnlyList<Row> Normal, IReadOnlyList<Row> Errors) Drive()
     {
         var rows = _upstream.Stream().ToList();
-        return _isSsis ? DriveSsis(rows) : DriveSimple(rows);
+        if (!_isSsis) return (DriveSimple(rows), Array.Empty<Row>());
+        if (_step.Async) return (DriveAsync(rows), Array.Empty<Row>());
+        return DriveSyncSsis(rows);
     }
 
-    // ----- driver: simple BetlPipelineComponent (Phase 5 base) -----
-
-    private IEnumerable<Row> DriveSimple(IReadOnlyList<Row> rows)
+    private IReadOnlyList<Row> DriveSimple(IReadOnlyList<Row> rows)
     {
         var instance = (BetlPipelineComponent)Activator.CreateInstance(_userType)!;
-        var buffer = new BetlPipelineBuffer(rows, _upstream.OutputSchema, OutputSchema);
+        var buffer = new BetlPipelineBuffer(rows, _upstream.OutputSchema, _step.OutputSchema);
         try
         {
             instance.PreExecute();
@@ -61,22 +109,101 @@ public sealed class DotnetPipelineComponent : IDataComponent
         }
         finally { instance.Cleanup(); }
 
-        foreach (var values in buffer.DrainOutput())
-            yield return new Row(OutputSchema, values);
+        return buffer.DrainOutput()
+            .Select(values => new Row(_step.OutputSchema, values))
+            .ToList();
     }
 
-    // ----- driver: full Microsoft.SqlServer.Dts.Pipeline.* shim -----
-
-    private IEnumerable<Row> DriveSsis(IReadOnlyList<Row> rows)
+    private (IReadOnlyList<Row> Normal, IReadOnlyList<Row> Errors) DriveSyncSsis(IReadOnlyList<Row> rows)
     {
         var instance = (ShimPipelineComponent)Activator.CreateInstance(_userType)!;
         var inSchema = _upstream.OutputSchema;
-        var outSchema = OutputSchema;
+        var outSchema = _step.OutputSchema;
 
-        // Build column metadata. Per upstream BufferManager.cs, LineageID ==
-        // column index in the SHARED (output-shape) buffer space. Input columns
-        // present in the output by name inherit their output position as their
-        // LineageID; absent input columns get -1 (unreachable in sync mode).
+        var (inputId, outputId, metadata) = BuildSsisMetadata(inSchema, outSchema);
+        instance.ComponentMetaData = metadata;
+        instance.BufferManager = new BetlBufferManager();
+
+        var inputArrays = ToArrays(rows);
+        var inputNames = inSchema.Columns.Select(c => c.Name).ToArray();
+        var outputNames = outSchema.Columns.Select(c => c.Name).ToArray();
+
+        var buffer = new BetlSyncBuffer(inputArrays, inputNames, outputNames);
+
+        try
+        {
+            instance.PreExecute();
+            instance.PrimeOutput(1, [outputId], [buffer]);
+            instance.ProcessInput(inputId, buffer);
+            instance.PostExecute();
+        }
+        finally { instance.Cleanup(); }
+
+        var normal = buffer.DrainOutput()
+            .Select(values => new Row(outSchema, values))
+            .ToList();
+
+        if (!_step.ErrorOutput) return (normal, Array.Empty<Row>());
+
+        var errSchema = BuildErrorSchema(outSchema);
+        var errors = buffer.DrainErrors()
+            .Select(e =>
+            {
+                var v = new object?[errSchema.Columns.Count];
+                Array.Copy(e.Values, 0, v, 0, e.Values.Length);
+                v[^2] = e.ErrorCode;
+                v[^1] = e.ErrorColumn;
+                return new Row(errSchema, v);
+            })
+            .ToList();
+
+        return (normal, errors);
+    }
+
+    private IReadOnlyList<Row> DriveAsync(IReadOnlyList<Row> rows)
+    {
+        var instance = (ShimPipelineComponent)Activator.CreateInstance(_userType)!;
+        var inSchema = _upstream.OutputSchema;
+        var outSchema = _step.OutputSchema;
+
+        var (inputId, outputId, _) = BuildSsisMetadata(inSchema, outSchema);
+        var meta = BuildSsisMetadata(inSchema, outSchema).Metadata;
+        instance.ComponentMetaData = meta;
+        instance.BufferManager = new BetlBufferManager();
+
+        var inputArrays = ToArrays(rows);
+        var inputNames = inSchema.Columns.Select(c => c.Name).ToArray();
+        var outputNames = outSchema.Columns.Select(c => c.Name).ToArray();
+
+        var inputBuffer = new BetlAsyncInputBuffer(inputArrays, inputNames);
+        var outputBuffer = new BetlAsyncOutputBuffer(outputNames);
+
+        try
+        {
+            instance.PreExecute();
+            instance.PrimeOutput(1, [outputId], [outputBuffer]);
+            instance.ProcessInput(inputId, inputBuffer);
+            instance.PostExecute();
+        }
+        finally { instance.Cleanup(); }
+
+        return outputBuffer.DrainOutput()
+            .Select(values => new Row(outSchema, values))
+            .ToList();
+    }
+
+    // ----- shared helpers -----
+
+    private static object?[][] ToArrays(IReadOnlyList<Row> rows)
+    {
+        var a = new object?[rows.Count][];
+        for (var i = 0; i < rows.Count; i++) a[i] = rows[i].Values;
+        return a;
+    }
+
+    private static (int InputId, int OutputId, BetlComponentMetaData Metadata) BuildSsisMetadata(
+        Schema inSchema, Schema outSchema)
+    {
         var outputCols = BuildOutputColumns(outSchema);
         var inputCols = BuildInputColumns(inSchema, outSchema);
 
@@ -97,30 +224,7 @@ public sealed class DotnetPipelineComponent : IDataComponent
             InputCollection = new BetlInputCollection([input]),
             OutputCollection = new BetlOutputCollection([output]),
         };
-
-        instance.ComponentMetaData = metadata;
-        instance.BufferManager = new BetlBufferManager();
-
-        // Convert upstream rows to object?[][] in input-schema order.
-        var inputArrays = new object?[rows.Count][];
-        for (var i = 0; i < rows.Count; i++) inputArrays[i] = rows[i].Values;
-        var inputNames = inSchema.Columns.Select(c => c.Name).ToArray();
-        var outputNames = outSchema.Columns.Select(c => c.Name).ToArray();
-
-        var buffer = new BetlSyncBuffer(inputArrays, inputNames, outputNames);
-
-        try
-        {
-            instance.PreExecute();
-            // PrimeOutput is meaningful only in async mode; pass the sync buffer for parity.
-            instance.PrimeOutput(1, [output.ID], [buffer]);
-            instance.ProcessInput(input.ID, buffer);
-            instance.PostExecute();
-        }
-        finally { instance.Cleanup(); }
-
-        foreach (var values in buffer.DrainOutput())
-            yield return new Row(OutputSchema, values);
+        return (input.ID, output.ID, metadata);
     }
 
     private static List<BetlOutputColumn> BuildOutputColumns(Schema outSchema)
@@ -146,7 +250,6 @@ public sealed class DotnetPipelineComponent : IDataComponent
         for (var i = 0; i < inSchema.Columns.Count; i++)
         {
             var c = inSchema.Columns[i];
-            // Lineage ID = output position of same-named column, else -1 (unreachable).
             var lineage = outSchema.IndexOf(c.Name);
             cols.Add(new BetlInputColumn
             {
@@ -159,24 +262,24 @@ public sealed class DotnetPipelineComponent : IDataComponent
         return cols;
     }
 
-    private static DataType MapArrowToSsis(Apache.Arrow.Types.IArrowType t) => t switch
+    private static DataType MapArrowToSsis(IArrowType t) => t switch
     {
-        Apache.Arrow.Types.Int64Type   => DataType.DT_I8,
-        Apache.Arrow.Types.Int32Type   => DataType.DT_I4,
-        Apache.Arrow.Types.Int16Type   => DataType.DT_I2,
-        Apache.Arrow.Types.Int8Type    => DataType.DT_I1,
-        Apache.Arrow.Types.UInt64Type  => DataType.DT_UI8,
-        Apache.Arrow.Types.UInt32Type  => DataType.DT_UI4,
-        Apache.Arrow.Types.UInt16Type  => DataType.DT_UI2,
-        Apache.Arrow.Types.UInt8Type   => DataType.DT_UI1,
-        Apache.Arrow.Types.DoubleType  => DataType.DT_R8,
-        Apache.Arrow.Types.FloatType   => DataType.DT_R4,
-        Apache.Arrow.Types.BooleanType => DataType.DT_BOOL,
-        Apache.Arrow.Types.StringType  => DataType.DT_WSTR,
-        Apache.Arrow.Types.BinaryType  => DataType.DT_BYTES,
-        Apache.Arrow.Types.Date32Type  => DataType.DT_DBDATE,
-        Apache.Arrow.Types.TimestampType => DataType.DT_DBTIMESTAMP2,
-        Apache.Arrow.Types.Decimal128Type => DataType.DT_NUMERIC,
+        Int64Type   => DataType.DT_I8,
+        Int32Type   => DataType.DT_I4,
+        Int16Type   => DataType.DT_I2,
+        Int8Type    => DataType.DT_I1,
+        UInt64Type  => DataType.DT_UI8,
+        UInt32Type  => DataType.DT_UI4,
+        UInt16Type  => DataType.DT_UI2,
+        UInt8Type   => DataType.DT_UI1,
+        DoubleType  => DataType.DT_R8,
+        FloatType   => DataType.DT_R4,
+        BooleanType => DataType.DT_BOOL,
+        StringType  => DataType.DT_WSTR,
+        BinaryType  => DataType.DT_BYTES,
+        Date32Type  => DataType.DT_DBDATE,
+        TimestampType => DataType.DT_DBTIMESTAMP2,
+        Decimal128Type => DataType.DT_NUMERIC,
         _ => DataType.DT_WSTR,
     };
 }

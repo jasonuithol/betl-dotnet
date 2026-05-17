@@ -107,7 +107,11 @@ public class BetlSyncBuffer : PipelineBuffer
     private readonly int[]       _inputForOutput;   // outputColIdx -> inputColIdx (-1 if none)
 
     private readonly List<object?[]> _outRows = new();
+    private readonly List<(object?[] Values, int ErrorCode, int ErrorColumn)> _errorRows = new();
     private object?[]? _stage;   // current staged row (output-shape)
+    private bool _stageIsError;
+    private int  _stageErrorCode;
+    private int  _stageErrorColumn;
     private long _cursor = -1;
 
     public override long RowCount    => _inputRows.LongLength;
@@ -144,6 +148,9 @@ public class BetlSyncBuffer : PipelineBuffer
         // Pre-populate output-shape staging row from same-named input columns.
         var inRow = _inputRows[_cursor];
         _stage = new object?[_outputNames.Length];
+        _stageIsError = false;
+        _stageErrorCode = 0;
+        _stageErrorColumn = 0;
         for (var o = 0; o < _outputNames.Length; o++)
         {
             var i = _inputForOutput[o];
@@ -152,9 +159,19 @@ public class BetlSyncBuffer : PipelineBuffer
         return true;
     }
 
+    public override void DirectErrorRow(int rowIdx, int errorCode, int errorColumn)
+    {
+        if (_stage is null) return;
+        _stageIsError = true;
+        _stageErrorCode = errorCode;
+        _stageErrorColumn = errorColumn;
+    }
+
     private void CommitStaged()
     {
-        if (_stage is not null) _outRows.Add(_stage);
+        if (_stage is null) return;
+        if (_stageIsError) _errorRows.Add((_stage, _stageErrorCode, _stageErrorColumn));
+        else _outRows.Add(_stage);
     }
 
     /// <summary>Called by the driver after ProcessInput returns to flush the final staged row.</summary>
@@ -164,6 +181,9 @@ public class BetlSyncBuffer : PipelineBuffer
         _stage = null;
         return _outRows;
     }
+
+    /// <summary>Drains rows tagged via DirectErrorRow (with their error code + column).</summary>
+    internal IReadOnlyList<(object?[] Values, int ErrorCode, int ErrorColumn)> DrainErrors() => _errorRows;
 
     // --- typed accessors (all read/write the staging row) -------------------
 

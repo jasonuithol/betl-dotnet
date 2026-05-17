@@ -28,22 +28,33 @@ public sealed class PivotComponent : IDataComponent
         if (valueIdx < 0) throw new BetlException($"pivot '{step.Id}': value_col '{step.ValueColumn}' not in input schema.");
         var valueType = input.Columns[valueIdx].ArrowType;
 
-        // Single pass: collect distinct name values (in first-seen order),
-        // and per (key, name_value), the latest value.
-        var distinctNames = new List<string>();
-        var seenNames = new HashSet<string>(StringComparer.Ordinal);
+        // Single pass: collect distinct name values (in first-seen order, OR
+        // restricted to the user's declared pivot_values list), and per
+        // (key, name_value), the latest value.
+        var declaredValues = step.PivotValues;
+        var declaredSet = declaredValues is null
+            ? null
+            : new HashSet<string>(declaredValues, StringComparer.Ordinal);
+        var distinctNames = declaredValues is null
+            ? new List<string>()
+            : new List<string>(declaredValues);
+        var seenNames = declaredValues is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(declaredValues, StringComparer.Ordinal);
         var groupRows = new Dictionary<object?[], Dictionary<string, object?>>(ObjectArrayComparer.Instance);
         var groupOrder = new List<object?[]>();
 
         foreach (var row in upstream.Stream())
         {
+            var name = row.Values[nameIdx]?.ToString() ?? "";
+            if (declaredSet is not null && !declaredSet.Contains(name)) continue;
+
             var key = RowOps.ExtractKey(row, keyIndices);
             if (!groupRows.TryGetValue(key, out var cells))
             {
                 groupRows[key] = cells = new Dictionary<string, object?>(StringComparer.Ordinal);
                 groupOrder.Add(key);
             }
-            var name = row.Values[nameIdx]?.ToString() ?? "";
             if (seenNames.Add(name)) distinctNames.Add(name);
             cells[name] = row.Values[valueIdx];
         }

@@ -1,0 +1,31 @@
+betl: 1
+name: phase7-http-get
+description: >
+  http.get fetches JSON from a local HttpListener, json.read parses, csv.write
+  emits. The test stands up the listener on localhost:ephemeral and passes the
+  URL + paths via params.
+
+parameters:
+  url:        { type: string, required: true }
+  fetch_to:   { type: string, required: true }
+  out:        { type: string, required: true }
+
+pipeline:
+  - id: fetch
+    type: http.get
+    url: ${params.url}
+    save_to: ${params.fetch_to}
+
+  - id: load
+    type: dataflow
+    after: [fetch]
+    steps:
+      - id: r
+        type: json.read
+        path: ${params.fetch_to}
+        format: array
+        columns: [id, name]
+      - id: w
+        type: csv.write
+        from: r
+        path: ${params.out}

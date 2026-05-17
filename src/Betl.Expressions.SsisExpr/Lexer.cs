@@ -43,6 +43,8 @@ internal sealed class Lexer
                 case '>':
                     if (Peek(1) == '=') { _i += 2; tokens.Add(new(TokenKind.GtEq, ">=", start)); continue; }
                     _i++; tokens.Add(new(TokenKind.Gt, ">", start)); continue;
+                case '?': _i++; tokens.Add(new(TokenKind.QMark, "?", start)); continue;
+                case ':': _i++; tokens.Add(new(TokenKind.Colon, ":", start)); continue;
                 case '&':
                     if (Peek(1) == '&') { _i += 2; tokens.Add(new(TokenKind.AmpAmp, "&&", start)); continue; }
                     throw Err(start, "Bitwise '&' not supported in Phase 1; use '&&' for logical AND.");

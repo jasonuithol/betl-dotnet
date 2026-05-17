@@ -11,14 +11,27 @@ internal sealed class Parser
 
     public AstNode ParseExpression()
     {
-        var node = ParseOr();
+        var node = ParseTernary();
         if (Peek().Kind != TokenKind.Eof)
             throw Err($"Unexpected token '{Peek().Text}' at end of expression.");
         return node;
     }
 
     // Precedence (lowest first):
-    //   || -> && -> == != -> < <= > >= -> + - -> * / % -> unary -> primary
+    //   ?: -> || -> && -> == != -> < <= > >= -> + - -> * / % -> unary (incl. cast) -> primary
+    private AstNode ParseTernary()
+    {
+        var cond = ParseOr();
+        if (Match(TokenKind.QMark))
+        {
+            var thenBranch = ParseTernary();
+            Expect(TokenKind.Colon, "ternary");
+            var elseBranch = ParseTernary();
+            return new TernaryNode(cond, thenBranch, elseBranch);
+        }
+        return cond;
+    }
+
     private AstNode ParseOr()
     {
         var left = ParseAnd();
@@ -90,9 +103,37 @@ internal sealed class Parser
 
     private AstNode ParseUnary()
     {
+        if (IsCastAhead())          return ParseCast();
         if (Match(TokenKind.Bang))  return new UnaryNode(UnaryOp.Not,    ParseUnary());
         if (Match(TokenKind.Minus)) return new UnaryNode(UnaryOp.Negate, ParseUnary());
         return ParsePrimary();
+    }
+
+    private bool IsCastAhead()
+    {
+        if (_t[_i].Kind != TokenKind.LParen) return false;
+        if (_i + 1 >= _t.Count) return false;
+        var next = _t[_i + 1];
+        return next.Kind == TokenKind.Identifier
+               && next.Text.StartsWith("DT_", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private AstNode ParseCast()
+    {
+        Expect(TokenKind.LParen, "cast");
+        var typeTok = _t[_i++];
+        var typeName = typeTok.Text.ToUpperInvariant();
+        var args = new List<long>();
+        while (Match(TokenKind.Comma))
+        {
+            var n = _t[_i++];
+            if (n.Kind != TokenKind.IntLit)
+                throw Err($"cast argument must be an integer literal, got '{n.Text}'.");
+            args.Add(long.Parse(n.Text, System.Globalization.CultureInfo.InvariantCulture));
+        }
+        Expect(TokenKind.RParen, "cast");
+        var operand = ParseUnary();
+        return new CastNode(typeName, args, operand);
     }
 
     private AstNode ParsePrimary()

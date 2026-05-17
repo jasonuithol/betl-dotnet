@@ -509,6 +509,7 @@ internal sealed class PipelineParser
             ? pk : throw new PipelineLoadException($"pivot '{id}': 'pivot_keys' is required."),
         NameColumn = ReqStr(m, "name_col", c),
         ValueColumn = ReqStr(m, "value_col", c),
+        PivotValues = OptStrList(m, "pivot_values", c) is { Count: > 0 } pv ? pv : null,
     };
 
     private UnpivotStep ParseUnpivotBody(YamlMappingNode m, string id, HashSet<string> c) => new()
@@ -782,6 +783,11 @@ internal sealed class PipelineParser
         var from = ReqStr(m, "from", c);
         var lang = OptStr(m, "lang", c) ?? "csharp";
         var source = ReqStr(m, "source", c);
+        var async = OptBool(m, "async", c) ?? false;
+        var errorOutput = OptBool(m, "error_output", c) ?? false;
+        if (async && errorOutput)
+            throw new PipelineLoadException(
+                $"dotnet.pipelinecomponent '{id}': async + error_output is not supported (matches upstream limitation).");
         c.Add("output_schema");
         var schemaNode = GetChild(m, "output_schema") as YamlSequenceNode
             ?? throw new PipelineLoadException($"dotnet.pipelinecomponent '{id}': 'output_schema' is required.");
@@ -789,6 +795,8 @@ internal sealed class PipelineParser
         {
             Id = id, From = from, Lang = lang, Source = source,
             OutputSchema = ParseSchema(schemaNode),
+            Async = async,
+            ErrorOutput = errorOutput,
         };
     }
 
