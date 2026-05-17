@@ -57,7 +57,20 @@ internal static class Program
     {
         if (argv.Length == 0) return Print($"Missing pipeline path.\n\n{Usage}", 64);
 
-        var pipeline = PipelineLoader.LoadFile(argv[0]);
+        var path = argv[0];
+        var yamlText = File.ReadAllText(path);
+
+        var schemaErrors = SchemaValidator.Validate(yamlText);
+        if (schemaErrors.Count > 0)
+        {
+            Console.Error.WriteLine($"schema errors in '{path}':");
+            foreach (var e in schemaErrors) Console.Error.WriteLine($"  - {e}");
+            return 1;
+        }
+
+        // Typed-parse adds the semantic checks the JSON Schema cannot express
+        // (Lua rejection, unknown step bodies, etc.).
+        var pipeline = PipelineLoader.Load(yamlText);
         Console.WriteLine(
             $"ok: pipeline '{pipeline.Name}' (betl: {pipeline.BetlVersion}), " +
             $"{pipeline.Steps.Count} top-level step(s).");

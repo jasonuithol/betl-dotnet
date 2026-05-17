@@ -1,0 +1,6 @@
+order_id,customer_id,amount,id,name,region
+101,1,50,1,Alice,us
+102,2,75,2,Bob,eu
+103,1,100,1,Alice,us
+104,3,200,3,Charlie,jp
+105,2,30,2,Bob,eu

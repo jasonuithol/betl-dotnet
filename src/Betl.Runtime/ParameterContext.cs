@@ -60,6 +60,25 @@ public sealed partial class ParameterContext
             ? v
             : throw new BetlException($"Unknown parameter '{name}'.");
 
+    /// <summary>
+    /// Binds a <c>${vars.<name>}</c> for the lifetime of the returned disposable.
+    /// Throws if the same name is already bound (no shadowing — the spec wants
+    /// foreach loop variables to be unambiguous).
+    /// </summary>
+    public IDisposable PushVar(string name, string value)
+    {
+        if (_vars.ContainsKey(name))
+            throw new BetlException(
+                $"Loop variable '{name}' is already bound (nested foreach with the same `as:` is rejected).");
+        _vars[name] = value;
+        return new VarPop(_vars, name);
+    }
+
+    private sealed class VarPop(Dictionary<string, string> vars, string name) : IDisposable
+    {
+        public void Dispose() => vars.Remove(name);
+    }
+
     public string Substitute(string template)
     {
         return PlaceholderRegex().Replace(template, m =>

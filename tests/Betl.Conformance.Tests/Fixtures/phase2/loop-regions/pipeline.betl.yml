@@ -1,0 +1,27 @@
+betl: 1
+name: loop-regions
+description: Exercises foreach + ${vars.region} substitution in paths.
+
+parameters:
+  in_dir:  { type: string, required: true }
+  out_dir: { type: string, required: true }
+
+pipeline:
+  - id: per_region
+    type: foreach
+    over: [us, eu, jp]
+    as: region
+    body:
+      - id: copy_region
+        type: dataflow
+        steps:
+          - id: read
+            type: csv.read
+            path: ${params.in_dir}/${vars.region}.csv
+            schema:
+              - { name: id,    type: int64 }
+              - { name: value, type: string }
+          - id: write
+            type: csv.write
+            from: read
+            path: ${params.out_dir}/${vars.region}.csv

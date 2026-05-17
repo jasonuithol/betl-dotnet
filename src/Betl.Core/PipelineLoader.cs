@@ -115,18 +115,28 @@ internal sealed class PipelineParser
 
         Step step = type switch
         {
-            "dataflow"  => ParseDataflowBody(m, id, c),
-            "csv.read"  => ParseCsvReadBody(m, id, c),
-            "csv.write" => ParseCsvWriteBody(m, id, c),
-            "filter"    => ParseFilterBody(m, id, c),
-            "map"       => ParseMapBody(m, id, c),
+            "dataflow"           => ParseDataflowBody(m, id, c),
+            "foreach"            => ParseForeachBody(m, id, c),
+            "csv.read"           => ParseCsvReadBody(m, id, c),
+            "csv.write"          => ParseCsvWriteBody(m, id, c),
+            "json.read"          => ParseJsonReadBody(m, id, c),
+            "json.write"         => ParseJsonWriteBody(m, id, c),
+            "filter"             => ParseFilterBody(m, id, c),
+            "map"                => ParseMapBody(m, id, c),
+            "distinct"           => ParseDistinctBody(m, id, c),
+            "limit"              => ParseLimitBody(m, id, c),
+            "union"              => ParseUnionBody(m, id, c),
+            "sort"               => ParseSortBody(m, id, c),
+            "aggregate"          => ParseAggregateBody(m, id, c),
+            "conditional_split"  => ParseConditionalSplitBody(m, id, c),
+            "multicast"          => ParseMulticastBody(m, id, c),
+            "join"               => ParseJoinBody(m, id, c),
             _ when type.StartsWith("lua.", StringComparison.Ordinal) || type == "python.transform"
                 => throw new PipelineLoadException(
                     $"Step '{id}' uses '{type}' which is not supported by betl.dotnet (no embedded {type.Split('.')[0]} runtime). "
                     + "Use 'ssisexpr' for inline expressions, or 'dotnet.script'/'dotnet.task' (planned) for scripts."),
             _ => throw new PipelineLoadException(
-                $"Step '{id}' has unsupported type '{type}'. " +
-                $"Phase 1 supports: dataflow, csv.read, csv.write, filter, map."),
+                $"Step '{id}' has unsupported type '{type}'."),
         };
 
         step = ApplyCommonStepKeys(step, m);
@@ -245,6 +255,220 @@ internal sealed class PipelineParser
         }
 
         return new MapStep { Id = id, From = from, Add = add, Select = select };
+    }
+
+    private ForeachStep ParseForeachBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var overSeq = ReqSeq(m, "over", c);
+        var over = overSeq.Children
+            .Select(n => (n as YamlScalarNode)?.Value
+                ?? throw new PipelineLoadException($"foreach '{id}': 'over' entries must be strings."))
+            .ToList();
+        var varName = ReqStr(m, "as", c);
+        var bodySeq = ReqSeq(m, "body", c);
+        var body = bodySeq.Children
+            .Select(n => ParseStep(RequireMap(n, $"foreach '{id}' body entry")))
+            .ToList();
+        return new ForeachStep { Id = id, Over = over, Variable = varName, Body = body };
+    }
+
+    private JsonReadStep ParseJsonReadBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var path = ReqStr(m, "path", c);
+        var formatStr = OptStr(m, "format", c);
+        var format = formatStr switch
+        {
+            null or "ndjson" => JsonFormat.Ndjson,
+            "array" => JsonFormat.Array,
+            _ => throw new PipelineLoadException($"json.read '{id}': unknown format '{formatStr}'."),
+        };
+        var colsSeq = ReqSeq(m, "columns", c);
+        var columns = colsSeq.Children
+            .Select(n => (n as YamlScalarNode)?.Value
+                ?? throw new PipelineLoadException($"json.read '{id}': 'columns' entries must be strings."))
+            .ToList();
+        return new JsonReadStep { Id = id, Path = path, Format = format, Columns = columns };
+    }
+
+    private JsonWriteStep ParseJsonWriteBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var from = ReqStr(m, "from", c);
+        var path = ReqStr(m, "path", c);
+        var formatStr = OptStr(m, "format", c);
+        var format = formatStr switch
+        {
+            null or "ndjson" => JsonFormat.Ndjson,
+            "array" => JsonFormat.Array,
+            _ => throw new PipelineLoadException($"json.write '{id}': unknown format '{formatStr}'."),
+        };
+        return new JsonWriteStep { Id = id, From = from, Path = path, Format = format };
+    }
+
+    private DistinctStep ParseDistinctBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var from = ReqStr(m, "from", c);
+        var keys = OptStrList(m, "keys", c);
+        return new DistinctStep
+        {
+            Id = id,
+            From = from,
+            Keys = keys.Count == 0 ? null : keys,
+        };
+    }
+
+    private LimitStep ParseLimitBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var from = ReqStr(m, "from", c);
+        var n = OptInt(m, "n", c)
+            ?? throw new PipelineLoadException($"limit '{id}': 'n' is required.");
+        if (n < 0) throw new PipelineLoadException($"limit '{id}': 'n' must be >= 0 (got {n}).");
+        return new LimitStep { Id = id, From = from, N = n };
+    }
+
+    private UnionStep ParseUnionBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var fromSeq = ReqSeq(m, "from", c);
+        var from = fromSeq.Children
+            .Select(n => (n as YamlScalarNode)?.Value
+                ?? throw new PipelineLoadException($"union '{id}': 'from' entries must be strings."))
+            .ToList();
+        if (from.Count < 2)
+            throw new PipelineLoadException($"union '{id}': needs at least 2 input streams.");
+        return new UnionStep { Id = id, From = from };
+    }
+
+    private SortStep ParseSortBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var from = ReqStr(m, "from", c);
+        var bySeq = ReqSeq(m, "by", c);
+        var by = bySeq.Children.Select(n => n switch
+        {
+            YamlScalarNode s => new SortKey(s.Value!, SortDirection.Asc),
+            YamlMappingNode km => ParseSortKey(km, id),
+            _ => throw new PipelineLoadException($"sort '{id}': 'by' entries must be a string or mapping."),
+        }).ToList();
+        if (by.Count == 0)
+            throw new PipelineLoadException($"sort '{id}': 'by' must list at least one key.");
+        return new SortStep { Id = id, From = from, By = by };
+    }
+
+    private static SortKey ParseSortKey(YamlMappingNode m, string stepId)
+    {
+        var c = new HashSet<string>(StringComparer.Ordinal);
+        var col = ReqStr(m, "col", c);
+        var dirStr = OptStr(m, "dir", c) ?? "asc";
+        var dir = dirStr switch
+        {
+            "asc" => SortDirection.Asc,
+            "desc" => SortDirection.Desc,
+            _ => throw new PipelineLoadException($"sort '{stepId}': dir must be 'asc' or 'desc' (got '{dirStr}')."),
+        };
+        RejectUnknown(m, c, $"sort '{stepId}' key");
+        return new SortKey(col, dir);
+    }
+
+    private AggregateStep ParseAggregateBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var from = ReqStr(m, "from", c);
+        var groupBy = OptStrList(m, "group_by", c);
+        c.Add("compute");
+        var computeNode = GetChild(m, "compute") as YamlMappingNode
+            ?? throw new PipelineLoadException($"aggregate '{id}': 'compute' must be a mapping.");
+
+        var compute = new List<KeyValuePair<string, AggregateCompute>>();
+        foreach (var kv in computeNode.Children)
+        {
+            var name = ((YamlScalarNode)kv.Key).Value!;
+            if (kv.Value is not YamlMappingNode body)
+                throw new PipelineLoadException($"aggregate '{id}.{name}': must be a mapping with 'agg' and optional 'over'.");
+            var bc = new HashSet<string>(StringComparer.Ordinal);
+            var aggStr = ReqStr(body, "agg", bc);
+            var over = OptStr(body, "over", bc);
+            RejectUnknown(body, bc, $"aggregate '{id}.{name}'");
+
+            var op = aggStr switch
+            {
+                "sum" => AggregateOp.Sum,
+                "count" => AggregateOp.Count,
+                "count_distinct" => AggregateOp.CountDistinct,
+                "min" => AggregateOp.Min,
+                "max" => AggregateOp.Max,
+                "avg" => AggregateOp.Avg,
+                "first" => AggregateOp.First,
+                "last" => AggregateOp.Last,
+                _ => throw new PipelineLoadException($"aggregate '{id}.{name}': unknown agg '{aggStr}'."),
+            };
+            if (op != AggregateOp.Count && over is null)
+                throw new PipelineLoadException($"aggregate '{id}.{name}': '{aggStr}' requires 'over'.");
+            compute.Add(KeyValuePair.Create(name, new AggregateCompute(op, over)));
+        }
+        if (compute.Count == 0)
+            throw new PipelineLoadException($"aggregate '{id}': 'compute' is empty.");
+        return new AggregateStep { Id = id, From = from, GroupBy = groupBy, Compute = compute };
+    }
+
+    private ConditionalSplitStep ParseConditionalSplitBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var from = ReqStr(m, "from", c);
+        var defaultCase = OptStr(m, "default_case", c);
+        c.Add("cases");
+        var casesNode = GetChild(m, "cases") as YamlMappingNode
+            ?? throw new PipelineLoadException($"conditional_split '{id}': 'cases' must be a mapping.");
+
+        var cases = new List<KeyValuePair<string, Expression>>();
+        foreach (var kv in casesNode.Children)
+        {
+            var name = ((YamlScalarNode)kv.Key).Value!;
+            cases.Add(KeyValuePair.Create(name, ParseExpressionNode(kv.Value)));
+        }
+        if (cases.Count == 0)
+            throw new PipelineLoadException($"conditional_split '{id}': 'cases' is empty.");
+        return new ConditionalSplitStep
+        {
+            Id = id,
+            From = from,
+            Cases = cases,
+            DefaultCase = defaultCase,
+        };
+    }
+
+    private MulticastStep ParseMulticastBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var from = ReqStr(m, "from", c);
+        var outputs = OptStrList(m, "outputs", c);
+        if (outputs.Count < 2)
+            throw new PipelineLoadException(
+                $"multicast '{id}': 'outputs' must list at least two port names.");
+        return new MulticastStep { Id = id, From = from, Outputs = outputs };
+    }
+
+    private JoinStep ParseJoinBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var left = ReqStr(m, "left", c);
+        var right = ReqStr(m, "right", c);
+        var kindStr = OptStr(m, "kind", c) ?? "inner";
+        var kind = kindStr switch
+        {
+            "inner" => JoinKind.Inner,
+            "left" => JoinKind.Left,
+            "right" => JoinKind.Right,
+            "full" => JoinKind.Full,
+            _ => throw new PipelineLoadException($"join '{id}': unknown kind '{kindStr}'."),
+        };
+        c.Add("on");
+        var onNode = GetChild(m, "on") as YamlMappingNode
+            ?? throw new PipelineLoadException($"join '{id}': 'on' must be a mapping (leftCol: rightCol).");
+        var on = new List<KeyValuePair<string, string>>();
+        foreach (var kv in onNode.Children)
+        {
+            var l = ((YamlScalarNode)kv.Key).Value!;
+            var r = (kv.Value as YamlScalarNode)?.Value
+                ?? throw new PipelineLoadException($"join '{id}': 'on.{l}' must be a string.");
+            on.Add(KeyValuePair.Create(l, r));
+        }
+        if (on.Count == 0)
+            throw new PipelineLoadException($"join '{id}': 'on' needs at least one key.");
+        return new JoinStep { Id = id, Left = left, Right = right, On = on, Kind = kind };
     }
 
     private SelectColumn ParseSelectColumn(YamlNode n)

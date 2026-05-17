@@ -1,0 +1,50 @@
+betl: 1
+name: enrich-orders
+description: Exercises csv.read x2, join (inner), distinct, limit, csv.write.
+
+parameters:
+  orders_in:    { type: string, required: true }
+  customers_in: { type: string, required: true }
+  out:          { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: orders
+        type: csv.read
+        path: ${params.orders_in}
+        schema:
+          - { name: order_id,    type: int64 }
+          - { name: customer_id, type: int64 }
+          - { name: amount,      type: float64 }
+
+      - id: customers
+        type: csv.read
+        path: ${params.customers_in}
+        schema:
+          - { name: id,     type: int64 }
+          - { name: name,   type: string }
+          - { name: region, type: string }
+
+      - id: joined
+        type: join
+        left: orders
+        right: customers
+        on: { customer_id: id }
+        kind: inner
+
+      - id: unique
+        type: distinct
+        from: joined
+        keys: [order_id]
+
+      - id: top
+        type: limit
+        from: unique
+        n: 5
+
+      - id: write
+        type: csv.write
+        from: top
+        path: ${params.out}

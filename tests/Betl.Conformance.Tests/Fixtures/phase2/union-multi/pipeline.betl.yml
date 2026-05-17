@@ -1,0 +1,51 @@
+betl: 1
+name: union-multi
+description: "Exercises union, multicast, csv.write x2, and the `from: id:port` syntax."
+
+parameters:
+  in1:      { type: string, required: true }
+  in2:      { type: string, required: true }
+  out_full: { type: string, required: true }
+  out_paid: { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: r1
+        type: csv.read
+        path: ${params.in1}
+        schema:
+          - { name: id,     type: int64 }
+          - { name: status, type: string }
+
+      - id: r2
+        type: csv.read
+        path: ${params.in2}
+        schema:
+          - { name: id,     type: int64 }
+          - { name: status, type: string }
+
+      - id: u
+        type: union
+        from: [r1, r2]
+
+      - id: tee
+        type: multicast
+        from: u
+        outputs: [a, b]
+
+      - id: write_full
+        type: csv.write
+        from: tee:a
+        path: ${params.out_full}
+
+      - id: only_paid
+        type: filter
+        from: tee:b
+        where: { lang: ssisexpr, expr: 'status == "paid"' }
+
+      - id: write_paid
+        type: csv.write
+        from: only_paid
+        path: ${params.out_paid}

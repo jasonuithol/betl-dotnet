@@ -1,0 +1,7 @@
+order_id,region,amount,status
+1,us,100,paid
+2,us,200,paid
+3,eu,150,paid
+4,jp,300,refunded
+5,eu,50,refunded
+6,us,300,paid

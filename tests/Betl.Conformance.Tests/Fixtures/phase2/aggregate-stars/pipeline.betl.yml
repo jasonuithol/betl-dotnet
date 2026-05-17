@@ -1,0 +1,56 @@
+betl: 1
+name: aggregate-stars
+description: >
+  Exercises conditional_split (with default_case), aggregate, sort, json.write,
+  csv.write — Phase 2 representative end-to-end.
+
+parameters:
+  in:           { type: string, required: true }
+  out_paid:     { type: string, required: true }
+  out_refunds:  { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: read
+        type: csv.read
+        path: ${params.in}
+        schema:
+          - { name: order_id, type: int64 }
+          - { name: region,   type: string }
+          - { name: amount,   type: float64 }
+          - { name: status,   type: string }
+
+      - id: split
+        type: conditional_split
+        from: read
+        cases:
+          paid: { lang: ssisexpr, expr: 'status == "paid"' }
+        default_case: other
+
+      - id: by_region
+        type: aggregate
+        from: split:paid
+        group_by: [region]
+        compute:
+          total:      { agg: sum,   over: amount }
+          cnt:        { agg: count }
+          avg_amount: { agg: avg,   over: amount }
+
+      - id: sorted
+        type: sort
+        from: by_region
+        by:
+          - { col: region, dir: asc }
+
+      - id: write_paid
+        type: json.write
+        from: sorted
+        path: ${params.out_paid}
+        format: ndjson
+
+      - id: write_refunds
+        type: csv.write
+        from: split:other
+        path: ${params.out_refunds}
