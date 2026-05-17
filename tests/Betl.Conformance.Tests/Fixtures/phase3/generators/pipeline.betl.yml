@@ -1,0 +1,26 @@
+betl: 1
+name: phase3-generators
+description: betl.gen_int64 -> filter -> betl.count_rows asserts the filter math.
+
+parameters:
+  expected: { type: int64, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 100
+        column: n
+        start: 0
+      - id: even
+        type: filter
+        from: gen
+        where:
+          lang: ssisexpr
+          expr: 'n % 2 == 0'
+      - id: cnt
+        type: betl.count_rows
+        from: even
+        expected: 50

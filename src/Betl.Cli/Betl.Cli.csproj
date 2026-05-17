@@ -10,6 +10,7 @@
     <ProjectReference Include="..\Betl.Runtime\Betl.Runtime.csproj" />
     <ProjectReference Include="..\Betl.Components\Betl.Components.csproj" />
     <ProjectReference Include="..\Betl.Expressions.SsisExpr\Betl.Expressions.SsisExpr.csproj" />
+    <ProjectReference Include="..\Betl.Providers.Sql\Betl.Providers.Sql.csproj" />
   </ItemGroup>
 
 </Project>

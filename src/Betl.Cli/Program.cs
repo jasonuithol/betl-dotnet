@@ -1,5 +1,6 @@
 using Betl.Core;
 using Betl.Expressions.SsisExpr;
+using Betl.Providers.Sql;
 using Betl.Runtime;
 
 namespace Betl.Cli;
@@ -46,12 +47,18 @@ internal static class Program
         var pipeline = PipelineLoader.LoadFile(path);
         var parameters = ParameterContext.Build(pipeline, cliParams);
         var engines = BuildEngines();
+        var sqlRegistry = BuildSqlRegistry();
 
         Console.Error.WriteLine($"betl: running '{pipeline.Name}'");
-        new Executor(pipeline, parameters, engines, msg => Console.Error.WriteLine(msg)).Run();
+        new Executor(pipeline, parameters, engines, sqlRegistry, msg => Console.Error.WriteLine(msg)).Run();
         Console.Error.WriteLine("betl: done");
         return 0;
     }
+
+    private static ConnectionRegistry BuildSqlRegistry() => new ConnectionRegistry()
+        .Register(new SqliteProvider())
+        .Register(new PostgresProvider())
+        .Register(new MsSqlProvider());
 
     private static int Validate(string[] argv)
     {

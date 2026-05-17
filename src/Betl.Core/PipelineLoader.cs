@@ -131,6 +131,23 @@ internal sealed class PipelineParser
             "conditional_split"  => ParseConditionalSplitBody(m, id, c),
             "multicast"          => ParseMulticastBody(m, id, c),
             "join"               => ParseJoinBody(m, id, c),
+            "pivot"              => ParsePivotBody(m, id, c),
+            "unpivot"            => ParseUnpivotBody(m, id, c),
+            "lookup"             => ParseLookupBody(m, id, c, providerHint: null),
+            "sql.execute"        => ParseSqlExecuteBody(m, id, c),
+            "shell"              => ParseShellBody(m, id, c),
+            "file.copy"          => ParseFileOpBody(m, id, c, copy: true),
+            "file.move"          => ParseFileMoveBody(m, id, c),
+            "file.delete"        => ParseFileDeleteBody(m, id, c),
+            "http.get"           => ParseHttpGetBody(m, id, c),
+            "http.post"          => ParseHttpPostBody(m, id, c),
+            "smtp.send"          => ParseSmtpSendBody(m, id, c),
+            "betl.gen_int64"     => ParseGenInt64Body(m, id, c),
+            "betl.gen_strings"   => ParseGenStringsBody(m, id, c),
+            "betl.count_rows"    => ParseCountRowsBody(m, id, c),
+            _ when type.EndsWith(".read",   StringComparison.Ordinal) => ParseSqlReadBody(m, id, c, type[..^".read".Length]),
+            _ when type.EndsWith(".upsert", StringComparison.Ordinal) => ParseSqlUpsertBody(m, id, c, type[..^".upsert".Length]),
+            _ when type.EndsWith(".lookup", StringComparison.Ordinal) => ParseLookupBody(m, id, c, providerHint: type[..^".lookup".Length]),
             _ when type.StartsWith("lua.", StringComparison.Ordinal) || type == "python.transform"
                 => throw new PipelineLoadException(
                     $"Step '{id}' uses '{type}' which is not supported by betl.dotnet (no embedded {type.Split('.')[0]} runtime). "
@@ -469,6 +486,323 @@ internal sealed class PipelineParser
         if (on.Count == 0)
             throw new PipelineLoadException($"join '{id}': 'on' needs at least one key.");
         return new JoinStep { Id = id, Left = left, Right = right, On = on, Kind = kind };
+    }
+
+    // ----- Phase 3 step parsers ------------------------------------------------
+
+    private PivotStep ParsePivotBody(YamlMappingNode m, string id, HashSet<string> c) => new()
+    {
+        Id = id,
+        From = ReqStr(m, "from", c),
+        PivotKeys = OptStrList(m, "pivot_keys", c) is { Count: > 0 } pk
+            ? pk : throw new PipelineLoadException($"pivot '{id}': 'pivot_keys' is required."),
+        NameColumn = ReqStr(m, "name_col", c),
+        ValueColumn = ReqStr(m, "value_col", c),
+    };
+
+    private UnpivotStep ParseUnpivotBody(YamlMappingNode m, string id, HashSet<string> c) => new()
+    {
+        Id = id,
+        From = ReqStr(m, "from", c),
+        ValueColumns = OptStrList(m, "value_cols", c) is { Count: > 0 } vc
+            ? vc : throw new PipelineLoadException($"unpivot '{id}': 'value_cols' is required."),
+        NameColumn = ReqStr(m, "name_col", c),
+        ValueColumn = ReqStr(m, "value_col", c),
+    };
+
+    private LookupStep ParseLookupBody(YamlMappingNode m, string id, HashSet<string> c, string? providerHint)
+    {
+        var step = new LookupStep
+        {
+            Id = id,
+            ProviderHint = providerHint,
+            From = ReqStr(m, "from", c),
+            Connection = ReqStr(m, "connection", c),
+            Table = ReqStr(m, "table", c),
+            Match = ParseKeyValueStringMap(m, "match", c, $"lookup '{id}'"),
+            Select = ParseKeyValueStringMap(m, "select", c, $"lookup '{id}'"),
+            OnMiss = OptStr(m, "on_miss", c) switch
+            {
+                null or "error" => LookupMiss.Error,
+                "null" => LookupMiss.Null,
+                "drop" => LookupMiss.Drop,
+                var v => throw new PipelineLoadException($"lookup '{id}': unknown on_miss '{v}'."),
+            },
+        };
+        return step;
+    }
+
+    private SqlReadStep ParseSqlReadBody(YamlMappingNode m, string id, HashSet<string> c, string providerHint)
+    {
+        // csv.read / json.read already matched earlier — provider-prefix here is a SQL-ish source.
+        var connection = ReqStr(m, "connection", c);
+        var sql = OptStr(m, "sql", c);
+        var file = OptStr(m, "file", c);
+        if ((sql is null) == (file is null))
+            throw new PipelineLoadException($"{providerHint}.read '{id}': specify exactly one of 'sql' or 'file'.");
+
+        var paramsMap = ParseScalarParamMap(m, "params", c);
+        Schema? pinned = null;
+        if (m.Children.ContainsKey(new YamlScalarNode("schema")))
+        {
+            var schemaSeq = ReqSeq(m, "schema", c);
+            pinned = ParseSchema(schemaSeq);
+        }
+        return new SqlReadStep
+        {
+            Id = id,
+            ProviderHint = providerHint,
+            Connection = connection,
+            Sql = sql,
+            File = file,
+            Params = paramsMap,
+            PinnedSchema = pinned,
+        };
+    }
+
+    private SqlUpsertStep ParseSqlUpsertBody(YamlMappingNode m, string id, HashSet<string> c, string providerHint) => new()
+    {
+        Id = id,
+        ProviderHint = providerHint,
+        From = ReqStr(m, "from", c),
+        Connection = ReqStr(m, "connection", c),
+        Table = ReqStr(m, "table", c),
+        Key = OptStrList(m, "key", c) is { Count: > 0 } k
+            ? k : throw new PipelineLoadException($"{providerHint}.upsert '{id}': 'key' is required."),
+        OnConflict = OptStr(m, "on_conflict", c) switch
+        {
+            null or "update" => OnConflictMode.Update,
+            "update_if_changed" => OnConflictMode.UpdateIfChanged,
+            "ignore" => OnConflictMode.Ignore,
+            "error" => OnConflictMode.Error,
+            var v => throw new PipelineLoadException($"{providerHint}.upsert '{id}': unknown on_conflict '{v}'."),
+        },
+        Columns = OptStrList(m, "columns", c) is { Count: > 0 } cols ? cols : null,
+        BatchSize = OptInt(m, "batch_size", c) ?? 1000,
+    };
+
+    private SqlExecuteStep ParseSqlExecuteBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var sql = OptStr(m, "sql", c);
+        var file = OptStr(m, "file", c);
+        if ((sql is null) == (file is null))
+            throw new PipelineLoadException($"sql.execute '{id}': specify exactly one of 'sql' or 'file'.");
+
+        var paramsMap = ParseScalarParamMap(m, "params", c);
+
+        IReadOnlyList<KeyValuePair<string, SqlExpect>>? expect = null;
+        if (m.Children.ContainsKey(new YamlScalarNode("expect")))
+        {
+            c.Add("expect");
+            var expectNode = GetChild(m, "expect") as YamlMappingNode
+                ?? throw new PipelineLoadException($"sql.execute '{id}': 'expect' must be a mapping.");
+            var list = new List<KeyValuePair<string, SqlExpect>>();
+            foreach (var kv in expectNode.Children)
+                list.Add(KeyValuePair.Create(((YamlScalarNode)kv.Key).Value!, ParseSqlExpect(kv.Value)));
+            expect = list;
+        }
+        var expectRow = OptStr(m, "expect_row", c) ?? "first";
+
+        return new SqlExecuteStep
+        {
+            Id = id,
+            Connection = ReqStr(m, "connection", c),
+            Sql = sql,
+            File = file,
+            Params = paramsMap,
+            Expect = expect,
+            ExpectRow = expectRow,
+        };
+    }
+
+    private static SqlExpect ParseSqlExpect(YamlNode n)
+    {
+        if (n is YamlScalarNode s) return new SqlExpect { Equal = ScalarValue(s) };
+        if (n is not YamlMappingNode m)
+            throw new PipelineLoadException("expect entry must be a scalar or mapping.");
+        var c = new HashSet<string>(StringComparer.Ordinal);
+        var expect = new SqlExpect
+        {
+            Min = OptDouble(m, "min", c),
+            Max = OptDouble(m, "max", c),
+            NotNull = OptBool(m, "not_null", c),
+        };
+        if (GetChild(m, "between") is YamlSequenceNode bs && bs.Children.Count == 2)
+        {
+            c.Add("between");
+            var lo = double.Parse(((YamlScalarNode)bs.Children[0]).Value!, System.Globalization.CultureInfo.InvariantCulture);
+            var hi = double.Parse(((YamlScalarNode)bs.Children[1]).Value!, System.Globalization.CultureInfo.InvariantCulture);
+            expect = expect with { Between = (lo, hi) };
+        }
+        if (GetChild(m, "one_of") is YamlSequenceNode os)
+        {
+            c.Add("one_of");
+            expect = expect with { OneOf = os.Children.Select(ScalarValue).ToList() };
+        }
+        RejectUnknown(m, c, "expect entry");
+        return expect;
+    }
+
+    private ShellStep ParseShellBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var argvSeq = ReqSeq(m, "argv", c);
+        var argv = argvSeq.Children.Select(n => (n as YamlScalarNode)?.Value
+            ?? throw new PipelineLoadException($"shell '{id}': argv entries must be strings.")).ToList();
+        if (argv.Count == 0) throw new PipelineLoadException($"shell '{id}': argv must have at least one entry.");
+
+        var env = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (GetChild(m, "env") is YamlMappingNode envMap)
+        {
+            c.Add("env");
+            foreach (var kv in envMap.Children)
+                env[((YamlScalarNode)kv.Key).Value!] = (kv.Value as YamlScalarNode)?.Value ?? "";
+        }
+
+        return new ShellStep
+        {
+            Id = id,
+            Argv = argv,
+            Env = env,
+            Stdout = ParseCapture(OptStr(m, "stdout", c), "stdout"),
+            Stderr = ParseCapture(OptStr(m, "stderr", c), "stderr"),
+        };
+    }
+
+    private static CapturePolicy ParseCapture(string? s, string field) => s switch
+    {
+        null or "capture" => CapturePolicy.Capture,
+        "discard" => CapturePolicy.Discard,
+        "inherit" => CapturePolicy.Inherit,
+        _ => throw new PipelineLoadException($"{field}: unknown value '{s}'."),
+    };
+
+    private FileCopyStep ParseFileOpBody(YamlMappingNode m, string id, HashSet<string> c, bool copy) =>
+        new() { Id = id, Src = ReqStr(m, "src", c), Dst = ReqStr(m, "dst", c) };
+
+    private FileMoveStep ParseFileMoveBody(YamlMappingNode m, string id, HashSet<string> c) =>
+        new() { Id = id, Src = ReqStr(m, "src", c), Dst = ReqStr(m, "dst", c) };
+
+    private FileDeleteStep ParseFileDeleteBody(YamlMappingNode m, string id, HashSet<string> c) =>
+        new() { Id = id, Path = ReqStr(m, "path", c) };
+
+    private HttpGetStep ParseHttpGetBody(YamlMappingNode m, string id, HashSet<string> c) => new()
+    {
+        Id = id,
+        Url = ReqStr(m, "url", c),
+        SaveTo = ReqStr(m, "save_to", c),
+        Headers = OptStrList(m, "headers", c) is { Count: > 0 } h ? h : null,
+    };
+
+    private HttpPostStep ParseHttpPostBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var body = OptStr(m, "body", c);
+        var bodyFile = OptStr(m, "body_file", c);
+        if (body is not null && bodyFile is not null)
+            throw new PipelineLoadException($"http.post '{id}': specify at most one of 'body' or 'body_file'.");
+        return new HttpPostStep
+        {
+            Id = id,
+            Url = ReqStr(m, "url", c),
+            SaveTo = ReqStr(m, "save_to", c),
+            Body = body,
+            BodyFile = bodyFile,
+            Headers = OptStrList(m, "headers", c) is { Count: > 0 } h ? h : null,
+        };
+    }
+
+    private SmtpSendStep ParseSmtpSendBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var body = OptStr(m, "body", c);
+        var bodyFile = OptStr(m, "body_file", c);
+        if ((body is null) == (bodyFile is null))
+            throw new PipelineLoadException($"smtp.send '{id}': specify exactly one of 'body' or 'body_file'.");
+
+        var toSeq = ReqSeq(m, "to", c);
+        var to = toSeq.Children.Select(n => (n as YamlScalarNode)?.Value
+            ?? throw new PipelineLoadException($"smtp.send '{id}': 'to' entries must be strings.")).ToList();
+        if (to.Count == 0) throw new PipelineLoadException($"smtp.send '{id}': 'to' must have at least one address.");
+
+        IReadOnlyList<string>? cc = null;
+        if (GetChild(m, "cc") is YamlSequenceNode ccSeq)
+        {
+            c.Add("cc");
+            cc = ccSeq.Children.Select(n => (n as YamlScalarNode)?.Value!).ToList();
+        }
+
+        return new SmtpSendStep
+        {
+            Id = id,
+            Url = ReqStr(m, "url", c),
+            Username = OptStr(m, "username", c),
+            Password = OptStr(m, "password", c),
+            From = ReqStr(m, "from", c),
+            To = to,
+            Cc = cc,
+            Subject = ReqStr(m, "subject", c),
+            Body = body,
+            BodyFile = bodyFile,
+        };
+    }
+
+    private BetlGenInt64Step ParseGenInt64Body(YamlMappingNode m, string id, HashSet<string> c) => new()
+    {
+        Id = id,
+        N = OptInt(m, "n", c) ?? throw new PipelineLoadException($"betl.gen_int64 '{id}': 'n' is required."),
+        ColumnName = OptStr(m, "column", c) ?? "n",
+        Start = OptInt(m, "start", c) ?? 0,
+    };
+
+    private BetlGenStringsStep ParseGenStringsBody(YamlMappingNode m, string id, HashSet<string> c) => new()
+    {
+        Id = id,
+        N = OptInt(m, "n", c) ?? throw new PipelineLoadException($"betl.gen_strings '{id}': 'n' is required."),
+        ColumnName = OptStr(m, "column", c) ?? "s",
+        Prefix = OptStr(m, "prefix", c) ?? "s",
+    };
+
+    private BetlCountRowsStep ParseCountRowsBody(YamlMappingNode m, string id, HashSet<string> c) => new()
+    {
+        Id = id,
+        From = ReqStr(m, "from", c),
+        ExpectedCount = OptInt(m, "expected", c),
+    };
+
+    // ----- shared parsers -----------------------------------------------------
+
+    private static IReadOnlyList<KeyValuePair<string, string>> ParseKeyValueStringMap(
+        YamlMappingNode m, string key, HashSet<string> consumed, string context)
+    {
+        consumed.Add(key);
+        if (GetChild(m, key) is not YamlMappingNode map)
+            throw new PipelineLoadException($"{context}: '{key}' must be a mapping.");
+        var list = new List<KeyValuePair<string, string>>();
+        foreach (var kv in map.Children)
+        {
+            var k = ((YamlScalarNode)kv.Key).Value!;
+            var v = (kv.Value as YamlScalarNode)?.Value
+                ?? throw new PipelineLoadException($"{context}: '{key}.{k}' must be a string.");
+            list.Add(KeyValuePair.Create(k, v));
+        }
+        return list;
+    }
+
+    private static IReadOnlyDictionary<string, object?> ParseScalarParamMap(
+        YamlMappingNode m, string key, HashSet<string> consumed)
+    {
+        consumed.Add(key);
+        if (GetChild(m, key) is not YamlMappingNode map) return new Dictionary<string, object?>();
+        var d = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var kv in map.Children)
+            d[((YamlScalarNode)kv.Key).Value!] = ScalarValueOrNull(kv.Value);
+        return d;
+    }
+
+    private static double? OptDouble(YamlMappingNode m, string key, ISet<string> consumed)
+    {
+        consumed.Add(key);
+        var s = GetScalar(m, key)?.Value;
+        if (s is null) return null;
+        return double.Parse(s, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private SelectColumn ParseSelectColumn(YamlNode n)

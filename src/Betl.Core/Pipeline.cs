@@ -169,6 +169,156 @@ public sealed record ForeachStep : Step
     public required IReadOnlyList<Step> Body { get; init; }
 }
 
+// ----- data-flow: pivot / unpivot ---------------------------------------------
+
+public sealed record PivotStep : Step
+{
+    public required string From { get; init; }
+    public required IReadOnlyList<string> PivotKeys { get; init; }
+    public required string NameColumn { get; init; }
+    public required string ValueColumn { get; init; }
+}
+
+public sealed record UnpivotStep : Step
+{
+    public required string From { get; init; }
+    public required IReadOnlyList<string> ValueColumns { get; init; }
+    public required string NameColumn { get; init; }
+    public required string ValueColumn { get; init; }
+}
+
+// ----- data-flow: generic SQL -------------------------------------------------
+
+public sealed record SqlReadStep : Step
+{
+    /// <summary>Optional provider prefix from the step type (e.g. "sqlite" for "sqlite.read"). Null = use the connection's declared type.</summary>
+    public string? ProviderHint { get; init; }
+    public required string Connection { get; init; }
+    public string? Sql { get; init; }
+    public string? File { get; init; }
+    public IReadOnlyDictionary<string, object?> Params { get; init; } = new Dictionary<string, object?>();
+    public Schema? PinnedSchema { get; init; }
+}
+
+public enum OnConflictMode { Update, UpdateIfChanged, Ignore, Error }
+
+public sealed record SqlUpsertStep : Step
+{
+    public string? ProviderHint { get; init; }
+    public required string From { get; init; }
+    public required string Connection { get; init; }
+    public required string Table { get; init; }
+    public required IReadOnlyList<string> Key { get; init; }
+    public OnConflictMode OnConflict { get; init; } = OnConflictMode.Update;
+    public IReadOnlyList<string>? Columns { get; init; }
+    public int BatchSize { get; init; } = 1000;
+}
+
+public enum LookupMiss { Error, Null, Drop }
+
+public sealed record LookupStep : Step
+{
+    public string? ProviderHint { get; init; }
+    public required string From { get; init; }
+    public required string Connection { get; init; }
+    public required string Table { get; init; }
+    /// <summary>Equi-match: input column → table column.</summary>
+    public required IReadOnlyList<KeyValuePair<string, string>> Match { get; init; }
+    /// <summary>Projection: output column → table column.</summary>
+    public required IReadOnlyList<KeyValuePair<string, string>> Select { get; init; }
+    public LookupMiss OnMiss { get; init; } = LookupMiss.Error;
+}
+
+// ----- data-flow: test generators / smoke sink --------------------------------
+
+public sealed record BetlGenInt64Step : Step
+{
+    public required long N { get; init; }
+    public string ColumnName { get; init; } = "n";
+    public long Start { get; init; }
+}
+
+public sealed record BetlGenStringsStep : Step
+{
+    public required long N { get; init; }
+    public string ColumnName { get; init; } = "s";
+    public string Prefix { get; init; } = "s";
+}
+
+public sealed record BetlCountRowsStep : Step
+{
+    public required string From { get; init; }
+    public long? ExpectedCount { get; init; }
+}
+
+// ----- control-flow: tasks ----------------------------------------------------
+
+public sealed record SqlExecuteStep : Step
+{
+    public required string Connection { get; init; }
+    public string? Sql { get; init; }
+    public string? File { get; init; }
+    public IReadOnlyDictionary<string, object?> Params { get; init; } = new Dictionary<string, object?>();
+    /// <summary>Post-condition guards on the first row of the result.</summary>
+    public IReadOnlyList<KeyValuePair<string, SqlExpect>>? Expect { get; init; }
+    /// <summary>"first" (default) or "all" — whether expect must hold for every row.</summary>
+    public string ExpectRow { get; init; } = "first";
+}
+
+/// <summary>Discriminated expectation: scalar = equality; otherwise constraints from the schema.</summary>
+public sealed record SqlExpect
+{
+    public object? Equal { get; init; }
+    public double? Min { get; init; }
+    public double? Max { get; init; }
+    public (double Lo, double Hi)? Between { get; init; }
+    public bool? NotNull { get; init; }
+    public IReadOnlyList<object?>? OneOf { get; init; }
+}
+
+public enum CapturePolicy { Capture, Discard, Inherit }
+
+public sealed record ShellStep : Step
+{
+    public required IReadOnlyList<string> Argv { get; init; }
+    public IReadOnlyDictionary<string, string> Env { get; init; } = new Dictionary<string, string>();
+    public CapturePolicy Stdout { get; init; } = CapturePolicy.Capture;
+    public CapturePolicy Stderr { get; init; } = CapturePolicy.Capture;
+}
+
+public sealed record FileCopyStep   : Step { public required string Src { get; init; } public required string Dst { get; init; } }
+public sealed record FileMoveStep   : Step { public required string Src { get; init; } public required string Dst { get; init; } }
+public sealed record FileDeleteStep : Step { public required string Path { get; init; } }
+
+public sealed record HttpGetStep : Step
+{
+    public required string Url { get; init; }
+    public required string SaveTo { get; init; }
+    public IReadOnlyList<string>? Headers { get; init; }
+}
+
+public sealed record HttpPostStep : Step
+{
+    public required string Url { get; init; }
+    public required string SaveTo { get; init; }
+    public string? Body { get; init; }
+    public string? BodyFile { get; init; }
+    public IReadOnlyList<string>? Headers { get; init; }
+}
+
+public sealed record SmtpSendStep : Step
+{
+    public required string Url { get; init; }
+    public string? Username { get; init; }
+    public string? Password { get; init; }
+    public required string From { get; init; }
+    public required IReadOnlyList<string> To { get; init; }
+    public IReadOnlyList<string>? Cc { get; init; }
+    public required string Subject { get; init; }
+    public string? Body { get; init; }
+    public string? BodyFile { get; init; }
+}
+
 public abstract record SelectColumn(string Name);
 public sealed record PassthroughColumn(string Name) : SelectColumn(Name);
 public sealed record RenameColumn(string Name, string From) : SelectColumn(Name);

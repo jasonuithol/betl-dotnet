@@ -7,7 +7,7 @@ namespace Betl.Components;
 /// semantics. Used as the key type for HashSet/Dictionary keyed by row projections
 /// (distinct, aggregate group-by, join build side, etc.).
 /// </summary>
-internal sealed class ObjectArrayComparer : IEqualityComparer<object?[]>
+public sealed class ObjectArrayComparer : IEqualityComparer<object?[]>
 {
     public static readonly ObjectArrayComparer Instance = new();
 
@@ -29,7 +29,7 @@ internal sealed class ObjectArrayComparer : IEqualityComparer<object?[]>
     }
 }
 
-internal static class RowOps
+public static class RowOps
 {
     /// <summary>Resolves each column name to its index in the schema, erroring on unknown names.</summary>
     public static int[] ResolveColumnIndices(Schema schema, IReadOnlyList<string> names, string context)

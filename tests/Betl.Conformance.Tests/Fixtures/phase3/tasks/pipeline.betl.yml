@@ -1,0 +1,29 @@
+betl: 1
+name: phase3-tasks
+description: shell + file.copy + file.move + file.delete sequenced via after.
+
+parameters:
+  in_file: { type: string, required: true }
+  out_dir: { type: string, required: true }
+
+pipeline:
+  - id: greet
+    type: shell
+    argv: ["dotnet", "--version"]
+
+  - id: copy
+    type: file.copy
+    src: ${params.in_file}
+    dst: ${params.out_dir}/copied.txt
+    after: [greet]
+
+  - id: move
+    type: file.move
+    src: ${params.out_dir}/copied.txt
+    dst: ${params.out_dir}/moved.txt
+    after: [copy]
+
+  - id: del
+    type: file.delete
+    path: ${params.out_dir}/moved.txt
+    after: [move]

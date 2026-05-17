@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.10" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
@@ -23,6 +24,7 @@
     <ProjectReference Include="..\..\src\Betl.Runtime\Betl.Runtime.csproj" />
     <ProjectReference Include="..\..\src\Betl.Components\Betl.Components.csproj" />
     <ProjectReference Include="..\..\src\Betl.Expressions.SsisExpr\Betl.Expressions.SsisExpr.csproj" />
+    <ProjectReference Include="..\..\src\Betl.Providers.Sql\Betl.Providers.Sql.csproj" />
   </ItemGroup>
 
   <ItemGroup>

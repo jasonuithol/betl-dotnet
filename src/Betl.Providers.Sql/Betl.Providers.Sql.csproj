@@ -2,11 +2,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Betl.Core\Betl.Core.csproj" />
+    <ProjectReference Include="..\Betl.Components\Betl.Components.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MailKit" Version="4.16.0" />
-    <PackageReference Include="Sep" Version="0.10.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.1" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.10" />
+    <PackageReference Include="Npgsql" Version="9.0.2" />
   </ItemGroup>
 
   <PropertyGroup>

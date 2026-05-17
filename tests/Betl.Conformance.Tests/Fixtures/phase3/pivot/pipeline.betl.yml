@@ -1,0 +1,29 @@
+betl: 1
+name: phase3-pivot
+description: long sales rows to wide region x month grid
+
+parameters:
+  in:  { type: string, required: true }
+  out: { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: read
+        type: csv.read
+        path: ${params.in}
+        schema:
+          - { name: region, type: string }
+          - { name: month,  type: string }
+          - { name: amount, type: float64 }
+      - id: piv
+        type: pivot
+        from: read
+        pivot_keys: [region]
+        name_col: month
+        value_col: amount
+      - id: write
+        type: csv.write
+        from: piv
+        path: ${params.out}

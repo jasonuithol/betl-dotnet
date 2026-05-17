@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Betl.Expressions.SsisExpr.T
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Betl.Conformance.Tests", "tests\Betl.Conformance.Tests\Betl.Conformance.Tests.csproj", "{90D081A7-38DC-424F-8AAC-C9A7A0D6F619}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Betl.Providers.Sql", "src\Betl.Providers.Sql\Betl.Providers.Sql.csproj", "{1823119C-C7EF-4D2B-8693-B1572236E93E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -127,6 +129,18 @@ Global
 		{90D081A7-38DC-424F-8AAC-C9A7A0D6F619}.Release|x64.Build.0 = Release|Any CPU
 		{90D081A7-38DC-424F-8AAC-C9A7A0D6F619}.Release|x86.ActiveCfg = Release|Any CPU
 		{90D081A7-38DC-424F-8AAC-C9A7A0D6F619}.Release|x86.Build.0 = Release|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Debug|x64.Build.0 = Debug|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Debug|x86.Build.0 = Debug|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Release|x64.ActiveCfg = Release|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Release|x64.Build.0 = Release|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Release|x86.ActiveCfg = Release|Any CPU
+		{1823119C-C7EF-4D2B-8693-B1572236E93E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -140,5 +154,6 @@ Global
 		{63139D6F-430C-414A-939D-69C1E0CBC65B} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{B9BBAA0E-7F43-43D6-9010-D91F4EF58888} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{90D081A7-38DC-424F-8AAC-C9A7A0D6F619} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{1823119C-C7EF-4D2B-8693-B1572236E93E} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

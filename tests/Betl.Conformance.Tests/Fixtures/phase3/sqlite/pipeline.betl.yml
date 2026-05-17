@@ -1,0 +1,78 @@
+betl: 1
+name: phase3-sqlite
+description: >
+  End-to-end SQLite round-trip via sql.execute + sqlite.upsert + sqlite.read,
+  plus sqlite.lookup against a seeded reference table. Asserts row counts with
+  expect and verifies the final enriched CSV against a golden output.
+
+parameters:
+  db_file: { type: string, required: true }
+  out:     { type: string, required: true }
+
+connections:
+  warehouse:
+    type: sqlite
+    # Pooling=False lets the temp db file be deleted promptly after the test.
+    dsn: "Data Source=${params.db_file};Pooling=False"
+
+pipeline:
+  - id: ddl
+    type: sql.execute
+    connection: warehouse
+    sql: |
+      DROP TABLE IF EXISTS orders;
+      DROP TABLE IF EXISTS customers;
+      CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, region TEXT);
+      CREATE TABLE orders (order_id INTEGER PRIMARY KEY, customer_id INTEGER, amount INTEGER);
+      INSERT INTO customers VALUES (1, 'Alice', 'us'), (2, 'Bob', 'eu'), (3, 'Charlie', 'jp');
+
+  - id: seed_orders
+    type: dataflow
+    after: [ddl]
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 5
+        column: order_id
+        start: 1
+      - id: enrich
+        type: map
+        from: gen
+        add:
+          customer_id: { lang: ssisexpr, expr: '((order_id - 1) % 3) + 1' }
+          amount:      { lang: ssisexpr, expr: 'order_id * 100' }
+      - id: upsert
+        type: sqlite.upsert
+        from: enrich
+        connection: warehouse
+        table: orders
+        key: [order_id]
+
+  - id: verify
+    type: sql.execute
+    connection: warehouse
+    sql: SELECT COUNT(*) AS n FROM orders
+    after: [seed_orders]
+    expect:
+      n: 5
+
+  - id: enrich_flow
+    type: dataflow
+    after: [verify]
+    steps:
+      - id: rd
+        type: sqlite.read
+        connection: warehouse
+        sql: SELECT order_id, customer_id, amount FROM orders ORDER BY order_id
+      - id: lk
+        type: lookup
+        from: rd
+        connection: warehouse
+        table: customers
+        match: { customer_id: id }
+        select: { name: name, region: region }
+        on_miss: error
+      - id: write
+        type: csv.write
+        from: lk
+        path: ${params.out}

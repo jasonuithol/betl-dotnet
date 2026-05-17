@@ -1,0 +1,6 @@
+order_id,customer_id,amount,name,region
+1,1,100,Alice,us
+2,2,200,Bob,eu
+3,3,300,Charlie,jp
+4,1,400,Alice,us
+5,2,500,Bob,eu

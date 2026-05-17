@@ -1,0 +1,30 @@
+betl: 1
+name: phase3-unpivot
+description: wide region/jan/feb/mar to long region/month/amount
+
+parameters:
+  in:  { type: string, required: true }
+  out: { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: read
+        type: csv.read
+        path: ${params.in}
+        schema:
+          - { name: region, type: string }
+          - { name: jan,    type: float64 }
+          - { name: feb,    type: float64 }
+          - { name: mar,    type: float64 }
+      - id: up
+        type: unpivot
+        from: read
+        value_cols: [jan, feb, mar]
+        name_col: month
+        value_col: amount
+      - id: write
+        type: csv.write
+        from: up
+        path: ${params.out}
