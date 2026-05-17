@@ -1,0 +1,43 @@
+betl: 1
+name: orders-csv-roundtrip
+description: >
+  Phase 1 vertical slice — reads a CSV of orders, keeps only paid rows with
+  positive amounts, tags each row with the run's load_date and a high_val
+  flag, and writes the result to a new CSV.
+
+parameters:
+  in:        { type: string, required: true }
+  out:       { type: string, required: true }
+  load_date: { type: date,   default: 2026-05-17 }
+
+pipeline:
+  - id: process
+    type: dataflow
+    steps:
+      - id: read
+        type: csv.read
+        path: ${params.in}
+        schema:
+          - { name: order_id,    type: int64 }
+          - { name: customer_id, type: int64 }
+          - { name: amount,      type: float64 }
+          - { name: status,      type: string }
+
+      - id: only_paid
+        type: filter
+        from: read
+        where:
+          lang: ssisexpr
+          expr: 'status == "paid" && amount > 0'
+
+      - id: tag
+        type: map
+        from: only_paid
+        add:
+          load_date: { lang: literal,  value: '${params.load_date}' }
+          high_val:  { lang: ssisexpr, expr: 'amount > 1000' }
+
+      - id: write
+        type: csv.write
+        from: tag
+        path: ${params.out}

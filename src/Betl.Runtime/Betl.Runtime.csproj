@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Betl.Core\Betl.Core.csproj" />
+    <ProjectReference Include="..\Betl.Components\Betl.Components.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

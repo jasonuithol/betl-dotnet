@@ -1,0 +1,4 @@
+order_id,customer_id,amount,status,load_date,high_val
+1,100,250,paid,2026-05-17,False
+2,101,1500,paid,2026-05-17,True
+5,104,500,paid,2026-05-17,False
