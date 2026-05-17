@@ -28,6 +28,8 @@ public static class DotnetCompiler
         using Betl.Ssis.Shim.Script;
         using Betl.Ssis.Shim.Task;
         using Betl.Ssis.Shim.PipelineComponent;
+        using Microsoft.SqlServer.Dts.Pipeline;
+        using Microsoft.SqlServer.Dts.Pipeline.Wrapper;
 
         """;
 
@@ -46,6 +48,30 @@ public static class DotnetCompiler
             ?? throw new BetlException(
                 $"{contextLabel}: user source did not declare any class deriving from {baseType.FullName}.");
         return match;
+    }
+
+    /// <summary>
+    /// Compile once and return the first non-abstract class deriving from ANY
+    /// of <paramref name="baseTypes"/>. Used by <c>dotnet.pipelinecomponent</c>
+    /// to accept either the simple <c>BetlPipelineComponent</c> base or the
+    /// full SSIS-compat <c>Microsoft.SqlServer.Dts.Pipeline.PipelineComponent</c>.
+    /// </summary>
+    public static (Type Type, Type MatchedBase) CompileAndFindAnyOf(
+        IReadOnlyList<Type> baseTypes, string source, string contextLabel)
+    {
+        var fullSource = ImplicitUsings + source;
+        var key = "any::" + Hash(fullSource);
+        var asm = Cache.GetOrAdd(key, _ => Compile(fullSource, contextLabel));
+
+        foreach (var t in asm.GetTypes())
+        {
+            if (t.IsAbstract) continue;
+            foreach (var b in baseTypes)
+                if (b.IsAssignableFrom(t)) return (t, b);
+        }
+        throw new BetlException(
+            $"{contextLabel}: user source did not declare any class deriving from " +
+            $"{string.Join(" or ", baseTypes.Select(b => b.FullName))}.");
     }
 
     private static Assembly Compile(string fullSource, string contextLabel)

@@ -1,0 +1,62 @@
+betl: 1
+name: phase6-ssis-pipelinecomponent
+description: >
+  Drives the FULL Microsoft.SqlServer.Dts.Pipeline.PipelineComponent shim
+  (SSIS-faithful API). The user source uses ComponentMetaData, IDTSInputColumn100,
+  IDTSOutputColumn100, BufferManager.FindColumnByLineageID, and PipelineBuffer.Get/SetInt64
+  — exactly as a hand-written SSIS custom PipelineComponent would. The driver
+  compiles + instantiates + drives PreExecute -> ProcessInput -> PostExecute.
+
+parameters:
+  out: { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 5
+        column: id
+        start: 1
+      - id: pc
+        type: dotnet.pipelinecomponent
+        from: gen
+        output_schema:
+          - { name: id,      type: int64 }
+          - { name: doubled, type: int64 }
+        source: |
+          public class UserComponent : Microsoft.SqlServer.Dts.Pipeline.PipelineComponent
+          {
+              int idIdx = -1, doubledIdx = -1;
+
+              public override void PreExecute()
+              {
+                  base.PreExecute();
+                  var input  = ComponentMetaData.InputCollection[(object)0];
+                  var output = ComponentMetaData.OutputCollection[(object)0];
+                  foreach (Microsoft.SqlServer.Dts.Pipeline.Wrapper.IDTSInputColumn100 c
+                           in input.InputColumnCollection)
+                  {
+                      if (c.Name == "id")
+                          idIdx = BufferManager.FindColumnByLineageID(input.Buffer, c.LineageID);
+                  }
+                  foreach (Microsoft.SqlServer.Dts.Pipeline.Wrapper.IDTSOutputColumn100 c
+                           in output.OutputColumnCollection)
+                  {
+                      if (c.Name == "doubled")
+                          doubledIdx = BufferManager.FindColumnByLineageID(input.Buffer, c.LineageID);
+                  }
+              }
+
+              public override void ProcessInput(int inputID,
+                  Microsoft.SqlServer.Dts.Pipeline.PipelineBuffer buffer)
+              {
+                  while (buffer.NextRow())
+                      buffer.SetInt64(doubledIdx, buffer.GetInt64(idIdx) * 2);
+              }
+          }
+      - id: write
+        type: csv.write
+        from: pc
+        path: ${params.out}
