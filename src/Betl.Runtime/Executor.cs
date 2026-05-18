@@ -90,7 +90,8 @@ public sealed partial class Executor
     private void RunDotnetTask(DotnetTaskStep step)
     {
         var resolved = _pipeline.Parameters.Keys.ToDictionary(k => k, k => _params.Get(k));
-        RunTask(new DotnetTask(step, resolved));
+        var withRefs = step with { References = step.References.Select(_params.Substitute).ToList() };
+        RunTask(new DotnetTask(withRefs, resolved));
     }
 
     private void RunSqlExecute(SqlExecuteStep step)
@@ -234,14 +235,16 @@ public sealed partial class Executor
                 case DotnetScriptStep ds:
                 {
                     var u = ResolveFrom(ports, ds.From, ds.Id, "dotnet.script.from");
-                    RegisterPort(ports, ds.Id, new DotnetScriptComponent(ds, u));
+                    var dsWithRefs = ds with { References = ds.References.Select(_params.Substitute).ToList() };
+                    RegisterPort(ports, ds.Id, new DotnetScriptComponent(dsWithRefs, u));
                     Log($"   {ds.Id}: dotnet.script ({ds.OutputSchema.Columns.Count} out cols)");
                     break;
                 }
                 case DotnetPipelineComponentStep dpc:
                 {
                     var u = ResolveFrom(ports, dpc.From, dpc.Id, "dotnet.pipelinecomponent.from");
-                    var dpcDriver = new DotnetPipelineComponent(dpc, u);
+                    var dpcWithRefs = dpc with { References = dpc.References.Select(_params.Substitute).ToList() };
+                    var dpcDriver = new DotnetPipelineComponent(dpcWithRefs, u);
                     foreach (var (name, port) in dpcDriver.Outputs)
                     {
                         var key = name == "out" ? dpc.Id : $"{dpc.Id}:{name}";

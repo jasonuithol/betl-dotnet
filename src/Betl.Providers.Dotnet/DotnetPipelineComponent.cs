@@ -40,7 +40,8 @@ public sealed class DotnetPipelineComponent
         var (type, matched) = DotnetCompiler.CompileAndFindAnyOf(
             [typeof(BetlPipelineComponent), typeof(ShimPipelineComponent)],
             step.Source,
-            $"dotnet.pipelinecomponent '{step.Id}'");
+            $"dotnet.pipelinecomponent '{step.Id}'",
+            step.References);
         _userType = type;
         _isSsis = matched == typeof(ShimPipelineComponent);
 

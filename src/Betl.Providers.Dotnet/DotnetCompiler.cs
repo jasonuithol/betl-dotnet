@@ -19,7 +19,7 @@ namespace Betl.Providers.Dotnet;
 public static class DotnetCompiler
 {
     private static readonly ConcurrentDictionary<string, Assembly> Cache = new();
-    private static readonly Lazy<IReadOnlyList<MetadataReference>> References = new(LoadReferences);
+    private static readonly Lazy<IReadOnlyList<MetadataReference>> BaseReferences = new(LoadBaseReferences);
 
     private const string ImplicitUsings = """
         using System;
@@ -33,15 +33,18 @@ public static class DotnetCompiler
 
         """;
 
-    public static Type CompileAndFindSubclass<TBase>(string source, string contextLabel)
-        => CompileAndFindSubclass(typeof(TBase), source, contextLabel);
+    public static Type CompileAndFindSubclass<TBase>(string source, string contextLabel,
+        IReadOnlyList<string>? extraReferencePaths = null)
+        => CompileAndFindSubclass(typeof(TBase), source, contextLabel, extraReferencePaths);
 
-    public static Type CompileAndFindSubclass(Type baseType, string source, string contextLabel)
+    public static Type CompileAndFindSubclass(Type baseType, string source, string contextLabel,
+        IReadOnlyList<string>? extraReferencePaths = null)
     {
         var fullSource = ImplicitUsings + source;
-        var key = $"{baseType.FullName}::" + Hash(fullSource);
+        var extras = ResolveExtraReferences(extraReferencePaths, contextLabel);
+        var key = $"{baseType.FullName}::" + Hash(fullSource) + "::" + ExtrasKey(extras);
 
-        var asm = Cache.GetOrAdd(key, _ => Compile(fullSource, contextLabel));
+        var asm = Cache.GetOrAdd(key, _ => Compile(fullSource, contextLabel, extras));
 
         var match = asm.GetTypes()
             .FirstOrDefault(t => !t.IsAbstract && baseType.IsAssignableFrom(t))
@@ -57,11 +60,13 @@ public static class DotnetCompiler
     /// full SSIS-compat <c>Microsoft.SqlServer.Dts.Pipeline.PipelineComponent</c>.
     /// </summary>
     public static (Type Type, Type MatchedBase) CompileAndFindAnyOf(
-        IReadOnlyList<Type> baseTypes, string source, string contextLabel)
+        IReadOnlyList<Type> baseTypes, string source, string contextLabel,
+        IReadOnlyList<string>? extraReferencePaths = null)
     {
         var fullSource = ImplicitUsings + source;
-        var key = "any::" + Hash(fullSource);
-        var asm = Cache.GetOrAdd(key, _ => Compile(fullSource, contextLabel));
+        var extras = ResolveExtraReferences(extraReferencePaths, contextLabel);
+        var key = "any::" + Hash(fullSource) + "::" + ExtrasKey(extras);
+        var asm = Cache.GetOrAdd(key, _ => Compile(fullSource, contextLabel, extras));
 
         foreach (var t in asm.GetTypes())
         {
@@ -74,13 +79,18 @@ public static class DotnetCompiler
             $"{string.Join(" or ", baseTypes.Select(b => b.FullName))}.");
     }
 
-    private static Assembly Compile(string fullSource, string contextLabel)
+    private static Assembly Compile(string fullSource, string contextLabel,
+        IReadOnlyList<MetadataReference> extras)
     {
         var tree = CSharpSyntaxTree.ParseText(fullSource);
+        var allRefs = extras.Count == 0
+            ? BaseReferences.Value
+            : (IEnumerable<MetadataReference>)BaseReferences.Value.Concat(extras);
+
         var compilation = CSharpCompilation.Create(
             assemblyName: "betl-dyn-" + Guid.NewGuid().ToString("N")[..8],
             syntaxTrees: new[] { tree },
-            references: References.Value,
+            references: allRefs,
             options: new CSharpCompilationOptions(
                 OutputKind.DynamicallyLinkedLibrary,
                 optimizationLevel: OptimizationLevel.Release,
@@ -99,7 +109,7 @@ public static class DotnetCompiler
         return AssemblyLoadContext.Default.LoadFromStream(ms);
     }
 
-    private static IReadOnlyList<MetadataReference> LoadReferences()
+    private static IReadOnlyList<MetadataReference> LoadBaseReferences()
     {
         var refs = new List<MetadataReference>();
         var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location)
@@ -128,6 +138,56 @@ public static class DotnetCompiler
         refs.Add(MetadataReference.CreateFromFile(shimAsm.Location));
 
         return refs;
+    }
+
+    private static IReadOnlyList<MetadataReference> ResolveExtraReferences(
+        IReadOnlyList<string>? paths, string contextLabel)
+    {
+        if (paths is null || paths.Count == 0) return Array.Empty<MetadataReference>();
+
+        var list = new List<MetadataReference>(paths.Count);
+        foreach (var raw in paths)
+        {
+            var expanded = raw.StartsWith("~/", StringComparison.Ordinal)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), raw[2..])
+                : raw;
+            var full = Path.GetFullPath(expanded);
+
+            if (!File.Exists(full))
+                throw new BetlException(
+                    $"{contextLabel}: reference '{raw}' not found (resolved to '{full}').");
+            try
+            {
+                using var fs = File.OpenRead(full);
+                using var pe = new PEReader(fs);
+                if (!pe.HasMetadata)
+                    throw new BetlException(
+                        $"{contextLabel}: reference '{raw}' (resolved '{full}') is not a managed .NET assembly.");
+            }
+            catch (BadImageFormatException ex)
+            {
+                throw new BetlException(
+                    $"{contextLabel}: reference '{raw}' (resolved '{full}') is not a valid PE file: {ex.Message}");
+            }
+            list.Add(MetadataReference.CreateFromFile(full));
+
+            // Roslyn only needs metadata to compile, but the CLR also needs the
+            // assembly loaded so JIT-time resolves of types from the reference
+            // succeed. Loading into the Default ALC is idempotent: if the
+            // assembly is already there (same FullName) the existing instance
+            // is returned.
+            try { AssemblyLoadContext.Default.LoadFromAssemblyPath(full); }
+            catch (FileLoadException) { /* already loaded — fine */ }
+        }
+        return list;
+    }
+
+    private static string ExtrasKey(IReadOnlyList<MetadataReference> extras)
+    {
+        if (extras.Count == 0) return "0";
+        // Stable cache key: sort by file path so order in YAML doesn't fragment the cache.
+        var paths = extras.Select(r => r.Display ?? "").OrderBy(s => s, StringComparer.Ordinal);
+        return Hash(string.Join("|", paths));
     }
 
     private static string Hash(string s)

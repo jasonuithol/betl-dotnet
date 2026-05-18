@@ -21,7 +21,8 @@ public sealed class DotnetScriptComponent : IDataComponent
         if (step.Lang != "csharp")
             throw new BetlException($"dotnet.script '{step.Id}': only 'csharp' supported (got '{step.Lang}').");
 
-        var type = DotnetCompiler.CompileAndFindSubclass<BetlScript>(step.Source, $"dotnet.script '{step.Id}'");
+        var type = DotnetCompiler.CompileAndFindSubclass<BetlScript>(
+            step.Source, $"dotnet.script '{step.Id}'", step.References);
         _instance = (BetlScript)Activator.CreateInstance(type)!;
     }
 

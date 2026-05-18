@@ -17,7 +17,8 @@ public sealed class DotnetTask : IControlTask
         if (step.Lang != "csharp")
             throw new BetlException($"dotnet.task '{step.Id}': only 'csharp' supported (got '{step.Lang}').");
 
-        var type = DotnetCompiler.CompileAndFindSubclass<BetlTask>(step.Source, $"dotnet.task '{step.Id}'");
+        var type = DotnetCompiler.CompileAndFindSubclass<BetlTask>(
+            step.Source, $"dotnet.task '{step.Id}'", step.References);
         _instance = (BetlTask)Activator.CreateInstance(type)!;
         _params = resolvedParams;
     }

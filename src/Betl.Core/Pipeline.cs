@@ -326,6 +326,7 @@ public sealed record DotnetTaskStep : Step
 {
     public required string Source { get; init; }
     public string Lang { get; init; } = "csharp";
+    public IReadOnlyList<string> References { get; init; } = [];
 }
 
 public sealed record DotnetScriptStep : Step
@@ -335,6 +336,7 @@ public sealed record DotnetScriptStep : Step
     public string Lang { get; init; } = "csharp";
     /// <summary>Required declared output schema — script output type can't be inferred.</summary>
     public required Schema OutputSchema { get; init; }
+    public IReadOnlyList<string> References { get; init; } = [];
 }
 
 public sealed record DotnetPipelineComponentStep : Step
@@ -347,6 +349,7 @@ public sealed record DotnetPipelineComponentStep : Step
     public bool Async { get; init; }
     /// <summary>Emit a second `error_out` port for rows tagged via DirectErrorRow. Sync mode only.</summary>
     public bool ErrorOutput { get; init; }
+    public IReadOnlyList<string> References { get; init; } = [];
 }
 
 public sealed record SmtpSendStep : Step
