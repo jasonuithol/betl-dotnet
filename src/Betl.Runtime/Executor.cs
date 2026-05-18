@@ -90,8 +90,23 @@ public sealed partial class Executor
     private void RunDotnetTask(DotnetTaskStep step)
     {
         var resolved = _pipeline.Parameters.Keys.ToDictionary(k => k, k => _params.Get(k));
-        var withRefs = step with { References = step.References.Select(_params.Substitute).ToList() };
+        var merged = MergeDotnetRefs(
+            step.References, step.Packages, $"dotnet.task '{step.Id}'");
+        var withRefs = step with { References = merged };
         RunTask(new DotnetTask(withRefs, resolved));
+    }
+
+    private IReadOnlyList<string> MergeDotnetRefs(
+        IReadOnlyList<string> references, IReadOnlyList<string> packages, string contextLabel)
+    {
+        var substRefs = references.Select(_params.Substitute).ToList();
+        if (packages.Count == 0) return substRefs;
+        var substPkgs = packages.Select(_params.Substitute).ToList();
+        var resolved = PackageResolver.Resolve(substPkgs, contextLabel);
+        var merged = new List<string>(substRefs.Count + resolved.Count);
+        merged.AddRange(substRefs);
+        merged.AddRange(resolved);
+        return merged;
     }
 
     private void RunSqlExecute(SqlExecuteStep step)
@@ -235,7 +250,9 @@ public sealed partial class Executor
                 case DotnetScriptStep ds:
                 {
                     var u = ResolveFrom(ports, ds.From, ds.Id, "dotnet.script.from");
-                    var dsWithRefs = ds with { References = ds.References.Select(_params.Substitute).ToList() };
+                    var dsRefs = MergeDotnetRefs(
+                        ds.References, ds.Packages, $"dotnet.script '{ds.Id}'");
+                    var dsWithRefs = ds with { References = dsRefs };
                     RegisterPort(ports, ds.Id, new DotnetScriptComponent(dsWithRefs, u));
                     Log($"   {ds.Id}: dotnet.script ({ds.OutputSchema.Columns.Count} out cols)");
                     break;
@@ -243,7 +260,9 @@ public sealed partial class Executor
                 case DotnetPipelineComponentStep dpc:
                 {
                     var u = ResolveFrom(ports, dpc.From, dpc.Id, "dotnet.pipelinecomponent.from");
-                    var dpcWithRefs = dpc with { References = dpc.References.Select(_params.Substitute).ToList() };
+                    var dpcRefs = MergeDotnetRefs(
+                        dpc.References, dpc.Packages, $"dotnet.pipelinecomponent '{dpc.Id}'");
+                    var dpcWithRefs = dpc with { References = dpcRefs };
                     var dpcDriver = new DotnetPipelineComponent(dpcWithRefs, u);
                     foreach (var (name, port) in dpcDriver.Outputs)
                     {

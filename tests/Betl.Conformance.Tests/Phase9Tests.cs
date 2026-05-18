@@ -96,6 +96,61 @@ public sealed class Phase9Tests
     }
 
     [Fact]
+    public void DotnetScript_can_pull_nuget_package_via_packages_field()
+    {
+        // Note: first run requires network access (dotnet restore against nuget.org).
+        // Subsequent runs hit the local %LOCALAPPDATA%\betl\package-cache and are offline-OK.
+        var outPath = Path.Combine(Path.GetTempPath(), $"p9-pkg-{Guid.NewGuid():N}.csv");
+        try
+        {
+            var (p, e, sql) = Load("dotnet-packages");
+            Run(p, e, sql, new() { ["out"] = outPath });
+            AssertFileMatches(Path.Combine(FixtureDir("dotnet-packages"), "expected.csv"), outPath);
+        }
+        finally
+        {
+            if (File.Exists(outPath)) File.Delete(outPath);
+        }
+    }
+
+    [Fact]
+    public void Malformed_package_id_surfaces_clear_error()
+    {
+        // Build a synthetic pipeline pointing at a bad package string.
+        var src = """
+            betl: 1
+            name: bad-pkg
+            pipeline:
+              - id: flow
+                type: dataflow
+                steps:
+                  - id: gen
+                    type: betl.gen_int64
+                    n: 1
+                  - id: s
+                    type: dotnet.script
+                    from: gen
+                    packages:
+                      - "no-at-sign-here"
+                    output_schema:
+                      - { name: n, type: int64 }
+                    source: |
+                      public class X : BetlScript {
+                        public override IEnumerable<object?[]> OnRow(IReadOnlyList<object?> row) {
+                          yield return new object?[] { row[0] };
+                        }
+                      }
+            """;
+        var p = PipelineLoader.Load(src);
+        var e = new EngineRegistry().Register(new SsisExpressionEngine());
+        var sql = new ConnectionRegistry().Register(new SqliteProvider());
+        var ex = Assert.Throws<BetlException>(() =>
+            new Executor(p, ParameterContext.Build(p, new Dictionary<string, string>()), e, sql).Run());
+        Assert.Contains("package", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("id@version", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Missing_reference_path_surfaces_clear_error()
     {
         // Reuse the dotnet-references fixture but point helper_dll at a non-existent file.

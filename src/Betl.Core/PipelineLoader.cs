@@ -762,6 +762,7 @@ internal sealed class PipelineParser
         Lang = OptStr(m, "lang", c) ?? "csharp",
         Source = ReqStr(m, "source", c),
         References = OptStrList(m, "references", c),
+        Packages = OptStrList(m, "packages", c),
     };
 
     private DotnetScriptStep ParseDotnetScriptBody(YamlMappingNode m, string id, HashSet<string> c)
@@ -770,6 +771,7 @@ internal sealed class PipelineParser
         var lang = OptStr(m, "lang", c) ?? "csharp";
         var source = ReqStr(m, "source", c);
         var references = OptStrList(m, "references", c);
+        var packages = OptStrList(m, "packages", c);
         c.Add("output_schema");
         var schemaNode = GetChild(m, "output_schema") as YamlSequenceNode
             ?? throw new PipelineLoadException($"dotnet.script '{id}': 'output_schema' is required.");
@@ -778,6 +780,7 @@ internal sealed class PipelineParser
             Id = id, From = from, Lang = lang, Source = source,
             OutputSchema = ParseSchema(schemaNode),
             References = references,
+            Packages = packages,
         };
     }
 
@@ -789,6 +792,7 @@ internal sealed class PipelineParser
         var async = OptBool(m, "async", c) ?? false;
         var errorOutput = OptBool(m, "error_output", c) ?? false;
         var references = OptStrList(m, "references", c);
+        var packages = OptStrList(m, "packages", c);
         if (async && errorOutput)
             throw new PipelineLoadException(
                 $"dotnet.pipelinecomponent '{id}': async + error_output is not supported (matches upstream limitation).");
@@ -802,6 +806,7 @@ internal sealed class PipelineParser
             Async = async,
             ErrorOutput = errorOutput,
             References = references,
+            Packages = packages,
         };
     }
 
