@@ -1,0 +1,102 @@
+betl: 1
+name: integration-postgres
+description: >
+  End-to-end Postgres round-trip: sql.execute DDL+seed, postgres.upsert (Update
+  mode, exercises ON CONFLICT DO UPDATE SET ... = EXCLUDED), postgres.read,
+  and postgres.lookup against a reference table. UpdateIfChanged is exercised
+  by a second upsert pass with two changed rows + three unchanged rows.
+
+parameters:
+  dsn: { type: string, required: true }
+  out: { type: string, required: true }
+
+connections:
+  warehouse:
+    type: postgres
+    dsn: ${params.dsn}
+
+pipeline:
+  - id: ddl
+    type: sql.execute
+    connection: warehouse
+    sql: |
+      DROP TABLE IF EXISTS orders;
+      DROP TABLE IF EXISTS customers;
+      CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, region TEXT);
+      CREATE TABLE orders (order_id INTEGER PRIMARY KEY, customer_id INTEGER, amount INTEGER);
+      INSERT INTO customers VALUES (1, 'Alice', 'us'), (2, 'Bob', 'eu'), (3, 'Charlie', 'jp');
+
+  - id: seed_orders
+    type: dataflow
+    after: [ddl]
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 5
+        column: order_id
+        start: 1
+      - id: enrich
+        type: map
+        from: gen
+        add:
+          customer_id: { lang: ssisexpr, expr: '((order_id - 1) % 3) + 1' }
+          amount:      { lang: ssisexpr, expr: 'order_id * 100' }
+      - id: upsert
+        type: postgres.upsert
+        from: enrich
+        connection: warehouse
+        table: orders
+        key: [order_id]
+        on_conflict: update
+
+  - id: bump_two
+    type: dataflow
+    after: [seed_orders]
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 5
+        column: order_id
+        start: 1
+      - id: enrich
+        type: map
+        from: gen
+        add:
+          customer_id: { lang: ssisexpr, expr: '((order_id - 1) % 3) + 1' }
+          amount:      { lang: ssisexpr, expr: 'order_id <= 2 ? order_id * 1000 : order_id * 100' }
+      - id: upsert_iff
+        type: postgres.upsert
+        from: enrich
+        connection: warehouse
+        table: orders
+        key: [order_id]
+        on_conflict: update_if_changed
+
+  - id: verify
+    type: sql.execute
+    connection: warehouse
+    sql: SELECT COUNT(*)::int AS n FROM orders
+    after: [bump_two]
+    expect:
+      n: 5
+
+  - id: enrich_flow
+    type: dataflow
+    after: [verify]
+    steps:
+      - id: rd
+        type: postgres.read
+        connection: warehouse
+        sql: SELECT order_id, customer_id, amount FROM orders ORDER BY order_id
+      - id: lk
+        type: lookup
+        from: rd
+        connection: warehouse
+        table: customers
+        match: { customer_id: id }
+        select: { name: name, region: region }
+        on_miss: error
+      - id: write
+        type: csv.write
+        from: lk
+        path: ${params.out}

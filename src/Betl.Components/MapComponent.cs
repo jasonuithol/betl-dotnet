@@ -6,6 +6,13 @@ namespace Betl.Components;
 /// <summary>
 /// Implements `map` with `add:` (additive) or `select:` (replacing). Computes the
 /// output schema at construction time so downstream wiring sees a stable shape.
+///
+/// Still on the row-based <see cref="IDataComponent"/> path: ssisexpr columns
+/// don't yet have type inference, so the declared output type (currently always
+/// StringType for LangExpressions) is a lie that downstream components like
+/// SqlUpsert rely on. Migrating map to <see cref="IBatchProducer"/> requires
+/// real type inference first; otherwise integer-yielding expressions get
+/// committed to a StringArray and Postgres rejects the parameter bind.
 /// </summary>
 public sealed class MapComponent : IDataComponent
 {

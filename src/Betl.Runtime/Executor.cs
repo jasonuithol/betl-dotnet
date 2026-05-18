@@ -361,12 +361,15 @@ public sealed partial class Executor
 
     private static readonly bool ParallelEnabled = QueuedDataComponent.ParallelEnabledByDefault();
     private static readonly int ParallelDepth = QueuedDataComponent.DefaultDepth();
+    private static readonly int ParallelBatchSize = QueuedDataComponent.DefaultBatchSize();
 
     private static void RegisterPort(Dictionary<string, IDataComponent> ports, string key, IDataComponent component)
     {
         if (ports.ContainsKey(key))
             throw new BetlException($"Duplicate port id '{key}' in this dataflow.");
-        ports[key] = ParallelEnabled ? new QueuedDataComponent(component, ParallelDepth) : component;
+        ports[key] = ParallelEnabled
+            ? new QueuedDataComponent(component, ParallelDepth, ParallelBatchSize)
+            : component;
     }
 
     private static IDataComponent ResolveFrom(
