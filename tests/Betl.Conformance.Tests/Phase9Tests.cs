@@ -150,6 +150,152 @@ public sealed class Phase9Tests
         Assert.Contains("id@version", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Compile and emit a betl plugin DLL on disk. We grab MetadataReferences
+    /// from the running test process so the plugin can name our types
+    /// (IBetlComponentPlugin, IDataComponent, Schema, Row) directly.
+    /// </summary>
+    private static string EmitPluginAssembly(string sourceCode, string targetDir)
+    {
+        Directory.CreateDirectory(targetDir);
+
+        var refs = new List<MetadataReference>();
+        var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
+        foreach (var dll in Directory.GetFiles(runtimeDir, "*.dll"))
+        {
+            try
+            {
+                using (var fs = File.OpenRead(dll))
+                using (var pe = new System.Reflection.PortableExecutable.PEReader(fs))
+                {
+                    if (!pe.HasMetadata) continue;
+                }
+                refs.Add(MetadataReference.CreateFromFile(dll));
+            }
+            catch { }
+        }
+        foreach (var asm in new[] {
+            typeof(Betl.Components.IDataComponent).Assembly,
+            typeof(Betl.Core.Row).Assembly,
+            typeof(Apache.Arrow.Types.IArrowType).Assembly,
+        }) refs.Add(MetadataReference.CreateFromFile(asm.Location));
+
+        var tree = CSharpSyntaxTree.ParseText(sourceCode);
+        var compilation = CSharpCompilation.Create(
+            "BetlTestPlugin-" + Guid.NewGuid().ToString("N")[..8],
+            [tree],
+            refs,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                optimizationLevel: OptimizationLevel.Release));
+
+        var dllPath = Path.Combine(targetDir, $"BetlTestPlugin-{Guid.NewGuid():N}.dll");
+        var result = compilation.Emit(dllPath);
+        if (!result.Success)
+        {
+            var errs = string.Join("\n", result.Diagnostics
+                .Where(d => d.Severity == DiagnosticSeverity.Error)
+                .Select(d => d.ToString()));
+            throw new InvalidOperationException("Plugin compile failed:\n" + errs);
+        }
+        return dllPath;
+    }
+
+    [Fact]
+    public void External_component_plugin_loads_from_drop_folder_and_dispatches()
+    {
+        const string pluginSource = """
+            using System.Collections.Generic;
+            using Betl.Components;
+            using Betl.Core;
+
+            namespace Betl.Test.Plugin;
+
+            public sealed class UpperPlugin : IBetlComponentPlugin
+            {
+                public string StepType => "test.upper";
+
+                public IDataComponent Create(
+                    string stepId,
+                    IReadOnlyDictionary<string, object?> body,
+                    IDataComponent? upstream,
+                    IReadOnlyDictionary<string, object?> resolvedParams)
+                {
+                    if (upstream is null)
+                        throw new BetlException($"test.upper '{stepId}': requires from:");
+                    if (!body.TryGetValue("column", out var colObj) || colObj is not string col)
+                        throw new BetlException($"test.upper '{stepId}': requires 'column:' (string).");
+                    var idx = upstream.OutputSchema.IndexOf(col);
+                    if (idx < 0)
+                        throw new BetlException($"test.upper '{stepId}': column '{col}' not in upstream schema.");
+                    return new UpperComponent(stepId, upstream, idx);
+                }
+            }
+
+            public sealed class UpperComponent : IDataComponent
+            {
+                private readonly IDataComponent _u;
+                private readonly int _colIdx;
+                public string Id { get; }
+                public Schema OutputSchema => _u.OutputSchema;
+                public UpperComponent(string id, IDataComponent u, int colIdx)
+                {
+                    Id = id; _u = u; _colIdx = colIdx;
+                }
+                public IEnumerable<Row> Stream()
+                {
+                    foreach (var row in _u.Stream())
+                    {
+                        var v = (object?[])row.Values.Clone();
+                        v[_colIdx] = ((string?)v[_colIdx])?.ToUpperInvariant();
+                        yield return new Row(OutputSchema, v);
+                    }
+                }
+            }
+            """;
+
+        var pluginDir = Path.Combine(Path.GetTempPath(), $"betl-plugin-{Guid.NewGuid():N}");
+        EmitPluginAssembly(pluginSource, pluginDir);
+
+        var outPath = Path.Combine(Path.GetTempPath(), $"p9-plugin-{Guid.NewGuid():N}.csv");
+        try
+        {
+            var registry = new PluginRegistry([pluginDir]);
+            Assert.Contains("test.upper", registry.StepTypes);
+
+            var pipeline = PipelineLoader.LoadFile(
+                Path.Combine(FixtureDir("dotnet-plugin"), "pipeline.betl.yml"),
+                registry.StepTypes);
+            var ctx = ParameterContext.Build(pipeline, new Dictionary<string, string> { ["out"] = outPath });
+            new Executor(pipeline, ctx,
+                new EngineRegistry().Register(new SsisExpressionEngine()),
+                new ConnectionRegistry().Register(new SqliteProvider()),
+                registry).Run();
+
+            AssertFileMatches(Path.Combine(FixtureDir("dotnet-plugin"), "expected.csv"), outPath);
+        }
+        finally
+        {
+            if (File.Exists(outPath)) File.Delete(outPath);
+            // Plugin DLLs are mmap'd by the default ALC; leave them for the OS to reap.
+            try { Directory.Delete(pluginDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void Unregistered_plugin_step_type_surfaces_clear_error_at_load_time()
+    {
+        // No plugin registry → unknown type fails at loader (existing behavior, not regressed).
+        var src = """
+            betl: 1
+            name: bad
+            pipeline:
+              - id: x
+                type: not.a.real.type
+            """;
+        var ex = Assert.Throws<PipelineLoadException>(() => PipelineLoader.Load(src));
+        Assert.Contains("not.a.real.type", ex.Message);
+    }
+
     [Fact]
     public void Missing_reference_path_surfaces_clear_error()
     {

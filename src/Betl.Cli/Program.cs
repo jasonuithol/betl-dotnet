@@ -44,13 +44,16 @@ internal static class Program
         if (argv.Length == 0) return Print($"Missing pipeline path.\n\n{Usage}", 64);
 
         var (path, cliParams) = ParseRunArgs(argv);
-        var pipeline = PipelineLoader.LoadFile(path);
+        var plugins = PluginRegistry.Discover();
+        var pipeline = PipelineLoader.LoadFile(path, plugins.StepTypes);
         var parameters = ParameterContext.Build(pipeline, cliParams);
         var engines = BuildEngines();
         var sqlRegistry = BuildSqlRegistry();
 
-        Console.Error.WriteLine($"betl: running '{pipeline.Name}'");
-        new Executor(pipeline, parameters, engines, sqlRegistry, msg => Console.Error.WriteLine(msg)).Run();
+        Console.Error.WriteLine($"betl: running '{pipeline.Name}'" +
+            (plugins.StepTypes.Count > 0 ? $" ({plugins.StepTypes.Count} plugin step type(s) loaded)" : ""));
+        new Executor(pipeline, parameters, engines, sqlRegistry, plugins,
+            msg => Console.Error.WriteLine(msg)).Run();
         Console.Error.WriteLine("betl: done");
         return 0;
     }
@@ -76,8 +79,11 @@ internal static class Program
         }
 
         // Typed-parse adds the semantic checks the JSON Schema cannot express
-        // (Lua rejection, unknown step bodies, etc.).
-        var pipeline = PipelineLoader.Load(yamlText);
+        // (Lua rejection, unknown step bodies, etc.). Plugin step types are
+        // honored during validation too so users see consistent errors
+        // between `betl validate` and `betl run`.
+        var plugins = PluginRegistry.Discover();
+        var pipeline = PipelineLoader.Load(yamlText, plugins.StepTypes);
         Console.WriteLine(
             $"ok: pipeline '{pipeline.Name}' (betl: {pipeline.BetlVersion}), " +
             $"{pipeline.Steps.Count} top-level step(s).");

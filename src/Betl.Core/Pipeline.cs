@@ -355,6 +355,19 @@ public sealed record DotnetPipelineComponentStep : Step
     public IReadOnlyList<string> Packages { get; init; } = [];
 }
 
+/// <summary>
+/// A step whose type is contributed by an external plugin assembly (see
+/// <c>Betl.Components.IBetlPlugin</c>). The loader emits this when it sees
+/// a step type that's not in the built-in dispatch table but is registered
+/// by a discovered plugin. The runtime resolves and instantiates via
+/// <c>PluginRegistry</c>.
+/// </summary>
+public sealed record PluginStep : Step
+{
+    public required string Type { get; init; }
+    public required IReadOnlyDictionary<string, object?> Body { get; init; }
+}
+
 public sealed record SmtpSendStep : Step
 {
     public required string Url { get; init; }

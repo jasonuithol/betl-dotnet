@@ -6,7 +6,16 @@ namespace Betl.Core;
 
 public static class PipelineLoader
 {
-    public static Pipeline Load(string yamlText)
+    public static Pipeline Load(string yamlText) => Load(yamlText, pluginStepTypes: null);
+
+    /// <summary>
+    /// Parse a pipeline. When <paramref name="pluginStepTypes"/> is supplied,
+    /// step types in that set are accepted and emitted as <see cref="PluginStep"/>
+    /// records carrying the raw YAML body for plugin-driven dispatch by the
+    /// executor. Step types not in any built-in arm AND not in this set still
+    /// fail with the standard "unsupported type" error.
+    /// </summary>
+    public static Pipeline Load(string yamlText, IReadOnlySet<string>? pluginStepTypes)
     {
         var stream = new YamlStream();
         using var reader = new StringReader(yamlText);
@@ -22,14 +31,24 @@ public static class PipelineLoader
         if (stream.Documents[0].RootNode is not YamlMappingNode root)
             throw new PipelineLoadException("Top-level node must be a mapping.");
 
-        return new PipelineParser().ParsePipeline(root);
+        return new PipelineParser(pluginStepTypes).ParsePipeline(root);
     }
 
-    public static Pipeline LoadFile(string path) => Load(File.ReadAllText(path));
+    public static Pipeline LoadFile(string path) => Load(File.ReadAllText(path), pluginStepTypes: null);
+
+    public static Pipeline LoadFile(string path, IReadOnlySet<string>? pluginStepTypes)
+        => Load(File.ReadAllText(path), pluginStepTypes);
 }
 
 internal sealed class PipelineParser
 {
+    private readonly IReadOnlySet<string>? _pluginStepTypes;
+
+    public PipelineParser(IReadOnlySet<string>? pluginStepTypes = null)
+    {
+        _pluginStepTypes = pluginStepTypes;
+    }
+
     public Pipeline ParsePipeline(YamlMappingNode root)
     {
         var consumed = new HashSet<string>(StringComparer.Ordinal);
@@ -163,6 +182,8 @@ internal sealed class PipelineParser
                 => throw new PipelineLoadException(
                     $"Step '{id}' uses '{type}' which is not supported by betl.dotnet (no embedded {type.Split('.')[0]} runtime). "
                     + "Use 'ssisexpr' for inline expressions, or 'dotnet.script'/'dotnet.task' (planned) for scripts."),
+            _ when _pluginStepTypes is not null && _pluginStepTypes.Contains(type)
+                => ParsePluginStep(m, id, type, c),
             _ => throw new PipelineLoadException(
                 $"Step '{id}' has unsupported type '{type}'."),
         };
@@ -754,6 +775,22 @@ internal sealed class PipelineParser
             Body = body,
             BodyFile = bodyFile,
         };
+    }
+
+    private PluginStep ParsePluginStep(YamlMappingNode m, string id, string type, HashSet<string> c)
+    {
+        // Capture every body key not already consumed by ConsumeCommonStepKeys
+        // (description/after/on_failure/etc) or the type/id pair. Plugin code
+        // parses the resulting dict itself.
+        var body = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var entry in m.Children)
+        {
+            if (entry.Key is not YamlScalarNode k || k.Value is null) continue;
+            if (c.Contains(k.Value)) continue;
+            c.Add(k.Value);
+            body[k.Value] = YamlBodyConverter.ToObject(entry.Value);
+        }
+        return new PluginStep { Id = id, Type = type, Body = body };
     }
 
     private DotnetTaskStep ParseDotnetTaskBody(YamlMappingNode m, string id, HashSet<string> c) => new()

@@ -1,0 +1,24 @@
+betl: 1
+name: phase9-dotnet-plugin
+description: Uses an external component plugin (test.upper) loaded from a drop folder.
+
+parameters:
+  out: { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: gen
+        type: betl.gen_strings
+        n: 3
+        column: word
+        prefix: hello
+      - id: shout
+        type: test.upper
+        from: gen
+        column: word
+      - id: write
+        type: csv.write
+        from: shout
+        path: ${params.out}

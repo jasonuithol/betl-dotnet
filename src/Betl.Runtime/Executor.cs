@@ -15,6 +15,7 @@ public sealed partial class Executor
     private readonly ParameterContext _params;
     private readonly EngineRegistry _engines;
     private readonly ConnectionRegistry? _sqlRegistry;
+    private readonly PluginRegistry? _plugins;
     private readonly Action<string>? _log;
 
     public Executor(
@@ -22,12 +23,14 @@ public sealed partial class Executor
         ParameterContext parameters,
         EngineRegistry engines,
         ConnectionRegistry? sqlRegistry = null,
+        PluginRegistry? plugins = null,
         Action<string>? log = null)
     {
         _pipeline = pipeline;
         _params = parameters;
         _engines = engines;
         _sqlRegistry = sqlRegistry;
+        _plugins = plugins;
         _log = log;
     }
 
@@ -57,9 +60,29 @@ public sealed partial class Executor
             case SmtpSendStep sm:    RunSmtp(sm); break;
             case SqlExecuteStep se:  RunSqlExecute(se); break;
             case DotnetTaskStep dt:  RunDotnetTask(dt); break;
+            case PluginStep ps:      RunPluginTask(ps); break;
             default:
                 throw new BetlException($"Top-level step type '{step.GetType().Name}' is not supported.");
         }
+    }
+
+    private void RunPluginTask(PluginStep ps)
+    {
+        if (_plugins is null)
+            throw new BetlException(
+                $"plugin step '{ps.Id}' (type '{ps.Type}'): no PluginRegistry configured on this Executor.");
+        if (!_plugins.TryGetTask(ps.Type, out var plugin))
+        {
+            // Maybe the user used a component plugin at the top level by mistake.
+            if (_plugins.TryGetComponent(ps.Type, out _))
+                throw new BetlException(
+                    $"plugin step '{ps.Id}': '{ps.Type}' is a data-flow component plugin, " +
+                    "not a task. Put it inside a `dataflow` step.");
+            throw new BetlException(
+                $"plugin step '{ps.Id}': no plugin registered for type '{ps.Type}'.");
+        }
+        var resolved = _pipeline.Parameters.Keys.ToDictionary(k => k, k => _params.Get(k));
+        RunTask(plugin.Create(ps.Id, ps.Body, resolved));
     }
 
     private void RunShell(ShellStep step)
@@ -352,6 +375,29 @@ public sealed partial class Executor
                     break;
                 }
 
+                case PluginStep ps:
+                {
+                    if (_plugins is null)
+                        throw new BetlException(
+                            $"plugin step '{ps.Id}' (type '{ps.Type}'): no PluginRegistry configured on this Executor.");
+                    if (!_plugins.TryGetComponent(ps.Type, out var compPlugin))
+                    {
+                        if (_plugins.TryGetTask(ps.Type, out _))
+                            throw new BetlException(
+                                $"plugin step '{ps.Id}': '{ps.Type}' is a control-flow task plugin, " +
+                                "not a data-flow component. Move it out of the dataflow.");
+                        throw new BetlException(
+                            $"plugin step '{ps.Id}': no plugin registered for type '{ps.Type}'.");
+                    }
+                    IDataComponent? upstream = null;
+                    if (ps.Body.TryGetValue("from", out var fromObj) && fromObj is string fromId)
+                        upstream = ResolveFrom(ports, _params.Substitute(fromId), ps.Id, $"{ps.Type}.from");
+                    var resolvedParams = _pipeline.Parameters.Keys.ToDictionary(k => k, k => _params.Get(k));
+                    var comp = compPlugin.Create(ps.Id, ps.Body, upstream, resolvedParams);
+                    RegisterPort(ports, ps.Id, comp);
+                    Log($"   {ps.Id}: {ps.Type} (plugin)");
+                    break;
+                }
                 default:
                     throw new BetlException(
                         $"Dataflow step type '{inner.GetType().Name}' is not supported.");
