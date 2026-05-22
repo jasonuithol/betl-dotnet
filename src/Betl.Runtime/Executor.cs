@@ -278,6 +278,16 @@ public sealed partial class Executor
                     Log($"   {a.Id}: aggregate group_by=[{string.Join(", ", a.GroupBy)}] compute={a.Compute.Count}");
                     break;
                 }
+                case PostgresExecStep pe:
+                {
+                    var u = ResolveFrom(ports, pe.From, pe.Id, "postgres.exec.from");
+                    var (_, dsn) = ResolveConnection(pe.Connection, $"postgres.exec '{pe.Id}'");
+                    var sql = _params.Substitute(pe.Sql);
+                    RegisterPort(ports, pe.Id,
+                        new PostgresExecComponent(pe with { Sql = sql }, u, dsn));
+                    Log($"   {pe.Id}: postgres.exec connection={pe.Connection} params={pe.Parameters.Count}");
+                    break;
+                }
                 case AuditStep au:
                 {
                     var u = ResolveFrom(ports, au.From, au.Id, "audit.from");

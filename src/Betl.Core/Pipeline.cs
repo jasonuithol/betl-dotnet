@@ -259,6 +259,20 @@ public sealed record PostgresCopyStep : Step
 }
 
 /// <summary>
+/// Postgres per-row SQL execution. For each input row, the configured
+/// statement runs with positional placeholders <c>$1, $2, …</c> bound to
+/// the listed input columns. The input row is passed through unchanged
+/// (the output schema equals the input schema).
+/// </summary>
+public sealed record PostgresExecStep : Step
+{
+    public required string From { get; init; }
+    public required string Connection { get; init; }
+    public required string Sql { get; init; }
+    public required IReadOnlyList<string> Parameters { get; init; }
+}
+
+/// <summary>
 /// MS SQL bulk insert via SqlBulkCopy. Comparable to <see cref="PostgresCopyStep"/>
 /// for the MS SQL side. Optional <c>Truncate</c> empties the destination first.
 /// </summary>

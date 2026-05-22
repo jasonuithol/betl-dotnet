@@ -1,0 +1,66 @@
+betl: 1
+name: integration-postgres-exec
+description: >
+  postgres.exec runs a per-row INSERT with positional parameters bound from
+  named input columns. Three input rows produce three audit-log entries; we
+  then read them back via postgres.read and write to CSV for golden compare.
+
+parameters:
+  dsn: { type: string, required: true }
+  out: { type: string, required: true }
+
+connections:
+  warehouse:
+    type: postgres
+    dsn: ${params.dsn}
+
+pipeline:
+  - id: ddl
+    type: sql.execute
+    connection: warehouse
+    sql: |
+      DROP TABLE IF EXISTS run_log;
+      CREATE TABLE run_log (run_id TEXT NOT NULL, stage TEXT NOT NULL, note TEXT NOT NULL);
+
+  - id: log_flow
+    type: dataflow
+    after: [ddl]
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 3
+        column: seq
+        start: 1
+
+      - id: stamp
+        type: audit
+        from: gen
+        columns:
+          run_id: "batch-007"
+          stage:  "phase10-test"
+
+      - id: log
+        type: postgres.exec
+        from: stamp
+        connection: warehouse
+        sql: |
+          INSERT INTO run_log (run_id, stage, note) VALUES ($1, $2, $3)
+        parameters: [run_id, stage, run_id]
+
+      - id: drain
+        type: betl.count_rows
+        from: log
+        expected: 3
+
+  - id: read_back
+    type: dataflow
+    after: [log_flow]
+    steps:
+      - id: rd
+        type: postgres.read
+        connection: warehouse
+        sql: SELECT run_id, stage, note FROM run_log ORDER BY run_id, stage
+      - id: write
+        type: csv.write
+        from: rd
+        path: ${params.out}

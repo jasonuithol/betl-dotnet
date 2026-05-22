@@ -178,6 +178,7 @@ internal sealed class PipelineParser
             "betl.gen_strings"   => ParseGenStringsBody(m, id, c),
             "betl.count_rows"    => ParseCountRowsBody(m, id, c),
             "postgres.copy"      => ParsePostgresCopyBody(m, id, c),
+            "postgres.exec"      => ParsePostgresExecBody(m, id, c),
             "mssql.bulkinsert"   => ParseMsSqlBulkInsertBody(m, id, c),
             _ when type.EndsWith(".read",   StringComparison.Ordinal) => ParseSqlReadBody(m, id, c, type[..^".read".Length]),
             _ when type.EndsWith(".upsert", StringComparison.Ordinal) => ParseSqlUpsertBody(m, id, c, type[..^".upsert".Length]),
@@ -587,6 +588,19 @@ internal sealed class PipelineParser
         Truncate = OptBool(m, "truncate", c) ?? false,
         Columns = OptStrList(m, "columns", c) is { Count: > 0 } cols ? cols : null,
     };
+
+    private PostgresExecStep ParsePostgresExecBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var step = new PostgresExecStep
+        {
+            Id = id,
+            From = ReqStr(m, "from", c),
+            Connection = ReqStr(m, "connection", c),
+            Sql = ReqStr(m, "sql", c),
+            Parameters = OptStrList(m, "parameters", c),
+        };
+        return step;
+    }
 
     private MsSqlBulkInsertStep ParseMsSqlBulkInsertBody(YamlMappingNode m, string id, HashSet<string> c)
     {
