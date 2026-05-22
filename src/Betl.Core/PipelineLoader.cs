@@ -958,7 +958,10 @@ internal sealed class PipelineParser
     private BetlGenInt64Step ParseGenInt64Body(YamlMappingNode m, string id, HashSet<string> c) => new()
     {
         Id = id,
-        N = OptInt(m, "n", c) ?? throw new PipelineLoadException($"betl.gen_int64 '{id}': 'n' is required."),
+        // Upstream's canonical key is `row_count:`; `n:` is accepted as a
+        // back-compat alias for fixtures written before this loader did.
+        N = OptInt(m, "row_count", c) ?? OptInt(m, "n", c)
+            ?? throw new PipelineLoadException($"betl.gen_int64 '{id}': 'row_count' (or 'n') is required."),
         ColumnName = OptStr(m, "column", c) ?? "n",
         Start = OptInt(m, "start", c) ?? 0,
     };
@@ -966,7 +969,8 @@ internal sealed class PipelineParser
     private BetlGenStringsStep ParseGenStringsBody(YamlMappingNode m, string id, HashSet<string> c) => new()
     {
         Id = id,
-        N = OptInt(m, "n", c) ?? throw new PipelineLoadException($"betl.gen_strings '{id}': 'n' is required."),
+        N = OptInt(m, "row_count", c) ?? OptInt(m, "n", c)
+            ?? throw new PipelineLoadException($"betl.gen_strings '{id}': 'row_count' (or 'n') is required."),
         ColumnName = OptStr(m, "column", c) ?? "s",
         Prefix = OptStr(m, "prefix", c) ?? "s",
     };

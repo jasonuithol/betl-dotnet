@@ -169,6 +169,37 @@ public sealed class Phase10Tests
         finally { if (File.Exists(outCsv)) File.Delete(outCsv); }
     }
 
+    // ----- generator naming compat ---------------------------------------
+
+    [Theory]
+    [InlineData("n", "betl.gen_int64")]
+    [InlineData("row_count", "betl.gen_int64")]
+    [InlineData("n", "betl.gen_strings")]
+    [InlineData("row_count", "betl.gen_strings")]
+    public void Generators_accept_row_count_and_n_as_aliases(string key, string stepType)
+    {
+        var yaml = $$"""
+            betl: 1
+            name: alias-check
+            pipeline:
+              - id: df
+                type: dataflow
+                steps:
+                  - id: gen
+                    type: {{stepType}}
+                    {{key}}: 3
+                  - id: drain
+                    type: betl.count_rows
+                    from: gen
+                    expected: 3
+            """;
+        var pipeline = PipelineLoader.Load(yaml);
+        var ctx = ParameterContext.Build(pipeline, new Dictionary<string, string>());
+        var engines = new EngineRegistry().Register(new SsisExpressionEngine());
+        var sql = new ConnectionRegistry().Register(new SqliteProvider());
+        new Executor(pipeline, ctx, engines, sql).Run();
+    }
+
     // ----- xlsx round-trip -----------------------------------------------
 
     [Fact]
