@@ -19,9 +19,14 @@ repo; `betl.dotnet` is a second reference implementation of that contract.
 - Spec-floor step types: `filter`, `map`, `lookup`, `join`, `aggregate`,
   `sort`, `union`, `distinct`, `limit`, `conditional_split`, `multicast`,
   `pivot`, `unpivot`, `dataflow`, `foreach`, plus the standard sink/source
-  conventions (`*.upsert`, `*.query`, `csv.*`, `json.*`).
+  conventions (`*.upsert`, `*.query`, `csv.*`, `json.*`, `xlsx.*`,
+  `xml.read`).
 - Tasks: `sql.execute`, `shell`, `file.copy`/`move`/`delete`, `http.get`,
-  `http.post`, `smtp.send`.
+  `http.post`, `smtp.send`, `var.set` (literal + SQL modes).
+- Reference-impl extensions: `audit` (metadata stamping),
+  `postgres.copy` (binary COPY append-only fast path),
+  `postgres.exec` (per-row SQL with `$N` positional binds),
+  `mssql.bulkinsert` (SqlBulkCopy).
 - Postgres + MSSQL providers (via Npgsql / Microsoft.Data.SqlClient — not
   libpq / unixODBC).
 - `dotnet.task`, `dotnet.script`, `dotnet.pipelinecomponent` (the SSIS
@@ -158,14 +163,19 @@ Duplicate `StepType` registration across plugins is a startup error.
 
 ## Status
 
-Active development. As of writing (Phase 9), the runtime covers the
-spec-floor step set plus pivots, lookups, joins, JSON/Arrow I/O,
+Active development. As of writing (Phase 10), the runtime covers the
+spec-floor step set plus pivots, lookups, joins, JSON/Arrow/XML/XLSX I/O,
 async + error-output `dotnet.pipelinecomponent`, the full lifted
-`Microsoft.SqlServer.Dts.Pipeline.*` shim, parallel
-queued execution, Postgres + MSSQL integration tests, BenchmarkDotNet
-harness, and the three extensibility levels above. SSIS-EL has ~30
-functions, ternary, and the full `(DT_*)` cast lattice. 127/127 tests
-pass.
+`Microsoft.SqlServer.Dts.Pipeline.*` shim, parallel queued execution,
+Postgres + MSSQL integration tests (including `postgres.copy`,
+`postgres.exec`, and `mssql.bulkinsert`), BenchmarkDotNet harness, and
+the three extensibility levels above. SSIS-EL has ~30 functions, ternary,
+and the full `(DT_*)` cast lattice. 139/139 tests pass.
+
+All step types that appear in upstream's `tests/integration/full-coverage/`
+exercise pipeline (the most comprehensive single audit anchor) are now
+implemented except `lua.*` — Lua is explicitly unsupported by design (use
+`ssisexpr` or `dotnet.script` / `dotnet.task`).
 
 Still deferred: full `RecordBatch` data-plane rewrite (gated on
 `ssisexpr` type inference), `Decimal128` scale > 28, locale-aware
