@@ -169,6 +169,28 @@ public sealed class Phase10Tests
         finally { if (File.Exists(outCsv)) File.Delete(outCsv); }
     }
 
+    // ----- xlsx round-trip -----------------------------------------------
+
+    [Fact]
+    public void Xlsx_write_then_xlsx_read_round_trip_yields_input_rows()
+    {
+        var dir = FixtureDir("xlsx-roundtrip");
+        var xlsx = Path.Combine(Path.GetTempPath(), $"p10g-{Guid.NewGuid():N}.xlsx");
+        var outCsv = Path.Combine(Path.GetTempPath(), $"p10g-{Guid.NewGuid():N}.csv");
+        try
+        {
+            var (p, e, sql) = Load("xlsx-roundtrip");
+            Run(p, e, sql, new() { ["xlsx"] = xlsx, ["out"] = outCsv });
+            AssertFileMatches(Path.Combine(dir, "expected.csv"), outCsv);
+            Assert.True(new FileInfo(xlsx).Length > 200, "xlsx file looks empty");
+        }
+        finally
+        {
+            if (File.Exists(outCsv)) File.Delete(outCsv);
+            if (File.Exists(xlsx)) File.Delete(xlsx);
+        }
+    }
+
     [Fact]
     public void XmlRead_rejects_empty_columns_at_load_time()
     {

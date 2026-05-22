@@ -5,6 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.0" />
     <PackageReference Include="MailKit" Version="4.16.0" />
     <PackageReference Include="Sep" Version="0.10.0" />
   </ItemGroup>

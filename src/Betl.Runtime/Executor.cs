@@ -215,6 +215,10 @@ public sealed partial class Executor
                     RegisterPort(ports, xr.Id, new XmlReadComponent(xr, _params.Substitute(xr.Path)));
                     Log($"   {xr.Id}: xml.read {_params.Substitute(xr.Path)} (row_xpath={xr.RowXPath})");
                     break;
+                case XlsxReadStep xlr:
+                    RegisterPort(ports, xlr.Id, new XlsxReadComponent(xlr, _params.Substitute(xlr.Path)));
+                    Log($"   {xlr.Id}: xlsx.read {_params.Substitute(xlr.Path)}");
+                    break;
                 case ArrowReadStep ar:
                     RegisterPort(ports, ar.Id, new ArrowReadComponent(ar, _params.Substitute(ar.Path)));
                     Log($"   {ar.Id}: arrow.read {_params.Substitute(ar.Path)}");
@@ -404,6 +408,13 @@ public sealed partial class Executor
                     var u = ResolveFrom(ports, jw.From, jw.Id, "json.write.from");
                     sinks.Add((new JsonWriteComponent(jw, _params.Substitute(jw.Path)), u));
                     Log($"   {jw.Id}: json.write {_params.Substitute(jw.Path)}");
+                    break;
+                }
+                case XlsxWriteStep xlw:
+                {
+                    var u = ResolveFrom(ports, xlw.From, xlw.Id, "xlsx.write.from");
+                    sinks.Add((new XlsxWriteSink(xlw, _params.Substitute(xlw.Path)), u));
+                    Log($"   {xlw.Id}: xlsx.write {_params.Substitute(xlw.Path)}");
                     break;
                 }
                 case ArrowWriteStep aw:

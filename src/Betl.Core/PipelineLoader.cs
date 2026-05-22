@@ -140,6 +140,8 @@ internal sealed class PipelineParser
             "csv.write"          => ParseCsvWriteBody(m, id, c),
             "json.read"          => ParseJsonReadBody(m, id, c),
             "xml.read"           => ParseXmlReadBody(m, id, c),
+            "xlsx.read"          => ParseXlsxReadBody(m, id, c),
+            "xlsx.write"         => ParseXlsxWriteBody(m, id, c),
             "json.write"         => ParseJsonWriteBody(m, id, c),
             "arrow.read"         => new ArrowReadStep { Id = id, Path = ReqStr(m, "path", c) },
             "arrow.write"        => new ArrowWriteStep
@@ -344,6 +346,23 @@ internal sealed class PipelineParser
             .ToList();
         return new JsonReadStep { Id = id, Path = path, Format = format, Columns = columns };
     }
+
+    private XlsxReadStep ParseXlsxReadBody(YamlMappingNode m, string id, HashSet<string> c) => new()
+    {
+        Id = id,
+        Path = ReqStr(m, "path", c),
+        Header = OptBool(m, "header", c) ?? true,
+        Sheet = OptStr(m, "sheet", c),
+    };
+
+    private XlsxWriteStep ParseXlsxWriteBody(YamlMappingNode m, string id, HashSet<string> c) => new()
+    {
+        Id = id,
+        From = ReqStr(m, "from", c),
+        Path = ReqStr(m, "path", c),
+        Header = OptBool(m, "header", c) ?? true,
+        Sheet = OptStr(m, "sheet", c) ?? "Sheet1",
+    };
 
     private XmlReadStep ParseXmlReadBody(YamlMappingNode m, string id, HashSet<string> c)
     {

@@ -66,6 +66,31 @@ public sealed record CsvWriteStep : Step
 }
 
 /// <summary>
+/// Excel (.xlsx) source. Reads the first worksheet (or the named one) and
+/// emits one row per data row. When <c>Header</c> is true (default) the
+/// first row supplies column names; otherwise columns are named c1, c2, ….
+/// All output columns are utf8 in v0.1.
+/// </summary>
+public sealed record XlsxReadStep : Step
+{
+    public required string Path { get; init; }
+    public bool Header { get; init; } = true;
+    public string? Sheet { get; init; }
+}
+
+/// <summary>
+/// Excel (.xlsx) sink. Writes the upstream stream into a single worksheet,
+/// optionally with a header row. Values are stringified at write time.
+/// </summary>
+public sealed record XlsxWriteStep : Step
+{
+    public required string From { get; init; }
+    public required string Path { get; init; }
+    public bool Header { get; init; } = true;
+    public string Sheet { get; init; } = "Sheet1";
+}
+
+/// <summary>
 /// XML source. Each row is materialized from a node matched by
 /// <c>RowXPath</c>; columns project values from XPath expressions evaluated
 /// relative to that row node (<c>@attr</c> for an attribute, an element

@@ -1,0 +1,37 @@
+betl: 1
+name: phase10-xlsx-roundtrip
+description: Mirror of upstream's full-coverage stage I — gen 5 rows, xlsx.write, xlsx.read, then csv.write so the test can do a golden compare.
+
+parameters:
+  xlsx: { type: string, required: true }
+  out:  { type: string, required: true }
+
+pipeline:
+  - id: write_flow
+    type: dataflow
+    steps:
+      - id: gen
+        type: betl.gen_strings
+        n: 5
+        prefix: hello
+      - id: write
+        type: xlsx.write
+        from: gen
+        path: ${params.xlsx}
+
+  - id: read_flow
+    type: dataflow
+    after: [write_flow]
+    steps:
+      - id: read_back
+        type: xlsx.read
+        path: ${params.xlsx}
+        header: true
+      - id: count
+        type: betl.count_rows
+        from: read_back
+        expected: 5
+      - id: write_csv
+        type: csv.write
+        from: read_back
+        path: ${params.out}
