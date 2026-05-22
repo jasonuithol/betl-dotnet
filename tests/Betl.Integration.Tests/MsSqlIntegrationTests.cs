@@ -49,4 +49,32 @@ public sealed class MsSqlIntegrationTests : IClassFixture<MsSqlExpressFixture>
             if (File.Exists(outPath)) File.Delete(outPath);
         }
     }
+
+    [SkippableFact]
+    public void MsSql_bulkinsert_append_and_truncate_modes_against_real_sql_server()
+    {
+        Skip.IfNot(_ms.Available, $"SQL Server unreachable via {_ms.MasterDsn}.");
+
+        var dir = FixtureDir("mssql-bulkinsert");
+        var outPath = Path.Combine(Path.GetTempPath(), $"it-ms-bulk-{Guid.NewGuid():N}.csv");
+        try
+        {
+            var pipeline = PipelineLoader.LoadFile(Path.Combine(dir, "pipeline.betl.yml"));
+            var engines = new EngineRegistry().Register(new SsisExpressionEngine());
+            var sql = new ConnectionRegistry().Register(new MsSqlProvider());
+            var ctx = ParameterContext.Build(pipeline, new Dictionary<string, string>
+            {
+                ["dsn"] = _ms.TestDsn,
+                ["out"] = outPath,
+            });
+
+            new Executor(pipeline, ctx, engines, sql).Run();
+
+            AssertFileMatches(Path.Combine(dir, "expected.csv"), outPath);
+        }
+        finally
+        {
+            if (File.Exists(outPath)) File.Delete(outPath);
+        }
+    }
 }

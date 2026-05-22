@@ -432,6 +432,15 @@ public sealed partial class Executor
                     Log($"   {pc.Id}: postgres.copy table={pc.Table}" + (pc.Truncate ? " (truncate)" : ""));
                     break;
                 }
+                case MsSqlBulkInsertStep mb:
+                {
+                    var u = ResolveFrom(ports, mb.From, mb.Id, "mssql.bulkinsert.from");
+                    var (_, dsn) = ResolveConnection(mb.Connection, $"mssql.bulkinsert '{mb.Id}'");
+                    sinks.Add((new MsSqlBulkInsertSink(mb, dsn), u));
+                    Log($"   {mb.Id}: mssql.bulkinsert table={mb.Table}" + (mb.Truncate ? " (truncate)" : "") +
+                        $" batch_size={mb.BatchSize}");
+                    break;
+                }
 
                 case PluginStep ps:
                 {

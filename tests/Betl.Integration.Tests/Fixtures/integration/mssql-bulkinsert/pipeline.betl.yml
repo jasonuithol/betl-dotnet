@@ -1,0 +1,87 @@
+betl: 1
+name: integration-mssql-bulkinsert
+description: >
+  mssql.bulkinsert via SqlBulkCopy. First load appends three rows over a
+  seed row; second load truncates the destination then bulk-inserts two
+  fresh rows. Read back via mssql.read for golden compare.
+
+parameters:
+  dsn: { type: string, required: true }
+  out: { type: string, required: true }
+
+connections:
+  legacy:
+    type: mssql
+    dsn: ${params.dsn}
+
+pipeline:
+  - id: ddl
+    type: sql.execute
+    connection: legacy
+    sql: |
+      IF OBJECT_ID('dbo.staging_bulk', 'U') IS NOT NULL DROP TABLE dbo.staging_bulk;
+      CREATE TABLE dbo.staging_bulk (seq INT NOT NULL, payload NVARCHAR(64) NOT NULL);
+      INSERT INTO dbo.staging_bulk (seq, payload) VALUES (-1, 'should-survive-append');
+
+  - id: append_three
+    type: dataflow
+    after: [ddl]
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 3
+        column: seq
+        start: 0
+      - id: stamp
+        type: map
+        from: gen
+        select:
+          - seq
+          - name: payload
+            lang: literal
+            value: "appended"
+      - id: write
+        type: mssql.bulkinsert
+        from: stamp
+        connection: legacy
+        table: dbo.staging_bulk
+        batch_size: 100
+        truncate: false
+
+  - id: replace_two
+    type: dataflow
+    after: [append_three]
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 2
+        column: seq
+        start: 100
+      - id: stamp
+        type: map
+        from: gen
+        select:
+          - seq
+          - name: payload
+            lang: literal
+            value: "replaced"
+      - id: write
+        type: mssql.bulkinsert
+        from: stamp
+        connection: legacy
+        table: dbo.staging_bulk
+        batch_size: 100
+        truncate: true
+
+  - id: read_back
+    type: dataflow
+    after: [replace_two]
+    steps:
+      - id: rd
+        type: mssql.read
+        connection: legacy
+        sql: SELECT seq, payload FROM dbo.staging_bulk ORDER BY seq
+      - id: write
+        type: csv.write
+        from: rd
+        path: ${params.out}
