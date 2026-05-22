@@ -149,6 +149,50 @@ public sealed class Phase10Tests
         Assert.Contains("shadows an upstream column", ex.Message);
     }
 
+    // ----- xml.read -------------------------------------------------------
+
+    [Fact]
+    public void XmlRead_emits_one_row_per_row_xpath_match_with_attr_and_element_bindings()
+    {
+        var dir = FixtureDir("xml-read");
+        var outCsv = Path.Combine(Path.GetTempPath(), $"p10f-{Guid.NewGuid():N}.csv");
+        try
+        {
+            var (p, e, sql) = Load("xml-read");
+            Run(p, e, sql, new()
+            {
+                ["src"] = Path.Combine(dir, "inventory.xml"),
+                ["out"] = outCsv,
+            });
+            AssertFileMatches(Path.Combine(dir, "expected.csv"), outCsv);
+        }
+        finally { if (File.Exists(outCsv)) File.Delete(outCsv); }
+    }
+
+    [Fact]
+    public void XmlRead_rejects_empty_columns_at_load_time()
+    {
+        var yaml = """
+            betl: 1
+            name: bad
+            pipeline:
+              - id: df
+                type: dataflow
+                steps:
+                  - id: r
+                    type: xml.read
+                    path: /tmp/never.xml
+                    row_xpath: /a/b
+                    columns: {}
+                  - id: w
+                    type: csv.write
+                    from: r
+                    path: /tmp/never.csv
+            """;
+        var ex = Assert.Throws<PipelineLoadException>(() => PipelineLoader.Load(yaml));
+        Assert.Contains("must list at least one column", ex.Message);
+    }
+
     [Fact]
     public void Audit_rejects_empty_columns_at_load_time()
     {

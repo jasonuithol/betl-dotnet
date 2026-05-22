@@ -65,6 +65,19 @@ public sealed record CsvWriteStep : Step
     public bool Header { get; init; } = true;
 }
 
+/// <summary>
+/// XML source. Each row is materialized from a node matched by
+/// <c>RowXPath</c>; columns project values from XPath expressions evaluated
+/// relative to that row node (<c>@attr</c> for an attribute, an element
+/// name for its text). All output columns are utf8 in v0.1.
+/// </summary>
+public sealed record XmlReadStep : Step
+{
+    public required string Path { get; init; }
+    public required string RowXPath { get; init; }
+    public required IReadOnlyList<KeyValuePair<string, string>> Columns { get; init; }
+}
+
 public enum JsonFormat { Ndjson, Array }
 
 public sealed record JsonReadStep : Step

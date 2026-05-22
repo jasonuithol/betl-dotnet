@@ -211,6 +211,10 @@ public sealed partial class Executor
                     RegisterPort(ports, jr.Id, new JsonReadComponent(jr, _params.Substitute(jr.Path)));
                     Log($"   {jr.Id}: json.read {_params.Substitute(jr.Path)}");
                     break;
+                case XmlReadStep xr:
+                    RegisterPort(ports, xr.Id, new XmlReadComponent(xr, _params.Substitute(xr.Path)));
+                    Log($"   {xr.Id}: xml.read {_params.Substitute(xr.Path)} (row_xpath={xr.RowXPath})");
+                    break;
                 case ArrowReadStep ar:
                     RegisterPort(ports, ar.Id, new ArrowReadComponent(ar, _params.Substitute(ar.Path)));
                     Log($"   {ar.Id}: arrow.read {_params.Substitute(ar.Path)}");

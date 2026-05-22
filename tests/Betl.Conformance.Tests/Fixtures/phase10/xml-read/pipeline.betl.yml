@@ -1,0 +1,26 @@
+betl: 1
+name: phase10-xml-read
+description: Mirror of upstream's full-coverage XML stage — attribute bindings (@sku, @vendor) and element bindings (rating, last_review) materialized from row_xpath /inventory/vendor.
+
+parameters:
+  src: { type: string, required: true }
+  out: { type: string, required: true }
+
+pipeline:
+  - id: flow
+    type: dataflow
+    steps:
+      - id: read
+        type: xml.read
+        path: ${params.src}
+        row_xpath: /inventory/vendor
+        columns:
+          sku:         "@sku"
+          vendor:      "@vendor"
+          rating:      "rating"
+          last_review: "last_review"
+
+      - id: write
+        type: csv.write
+        from: read
+        path: ${params.out}

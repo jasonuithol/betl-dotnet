@@ -139,6 +139,7 @@ internal sealed class PipelineParser
             "csv.read"           => ParseCsvReadBody(m, id, c),
             "csv.write"          => ParseCsvWriteBody(m, id, c),
             "json.read"          => ParseJsonReadBody(m, id, c),
+            "xml.read"           => ParseXmlReadBody(m, id, c),
             "json.write"         => ParseJsonWriteBody(m, id, c),
             "arrow.read"         => new ArrowReadStep { Id = id, Path = ReqStr(m, "path", c) },
             "arrow.write"        => new ArrowWriteStep
@@ -342,6 +343,16 @@ internal sealed class PipelineParser
                 ?? throw new PipelineLoadException($"json.read '{id}': 'columns' entries must be strings."))
             .ToList();
         return new JsonReadStep { Id = id, Path = path, Format = format, Columns = columns };
+    }
+
+    private XmlReadStep ParseXmlReadBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var path = ReqStr(m, "path", c);
+        var rowXPath = ReqStr(m, "row_xpath", c);
+        var cols = ParseKeyValueStringMap(m, "columns", c, $"xml.read '{id}'");
+        if (cols.Count == 0)
+            throw new PipelineLoadException($"xml.read '{id}': 'columns' must list at least one column.");
+        return new XmlReadStep { Id = id, Path = path, RowXPath = rowXPath, Columns = cols };
     }
 
     private JsonWriteStep ParseJsonWriteBody(YamlMappingNode m, string id, HashSet<string> c)
