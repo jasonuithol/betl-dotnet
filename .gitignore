@@ -482,3 +482,9 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Run outputs from examples/full-coverage (.gitkeep marks the dirs themselves).
+examples/full-coverage/out/*
+!examples/full-coverage/out/.gitkeep
+examples/full-coverage/tmp/*
+!examples/full-coverage/tmp/.gitkeep
