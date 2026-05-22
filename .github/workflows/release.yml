@@ -1,0 +1,50 @@
+name: Release
+
+# Fires on a v* tag push. Builds Betl.Cli as a .NET global tool, attaches
+# the .nupkg to a GitHub Release, and (if the NUGET_API_KEY secret is
+# present) publishes the package to nuget.org.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write  # required by softprops/action-gh-release to upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Pack Betl.Dotnet
+        run: |
+          dotnet pack -c Release \
+              src/Betl.Cli/Betl.Cli.csproj \
+              -o release-output
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-output/*.nupkg
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref, '-') }}
+
+      - name: Publish to nuget.org (if API key configured)
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "NUGET_API_KEY secret not set — skipping nuget.org publish."
+            echo "To enable: add NUGET_API_KEY to the repo secrets (Settings → Secrets and variables → Actions)."
+            exit 0
+          fi
+          dotnet nuget push release-output/*.nupkg \
+              --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
