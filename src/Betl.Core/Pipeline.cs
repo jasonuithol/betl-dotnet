@@ -181,6 +181,20 @@ public sealed record ForeachStep : Step
     public required IReadOnlyList<Step> Body { get; init; }
 }
 
+// ----- data-flow: audit (metadata stamping) -----------------------------------
+
+/// <summary>
+/// 1-in 1-out transform that appends fixed audit columns to every row. Values
+/// are template strings (resolved via param/var/env substitution at executor
+/// time) and the appended columns are all utf8 to keep the v0.1 surface
+/// minimal — the typical use is run-id / source-file / batch-timestamp stamps.
+/// </summary>
+public sealed record AuditStep : Step
+{
+    public required string From { get; init; }
+    public required IReadOnlyList<KeyValuePair<string, string>> Columns { get; init; }
+}
+
 // ----- data-flow: pivot / unpivot ---------------------------------------------
 
 public sealed record PivotStep : Step

@@ -159,6 +159,7 @@ internal sealed class PipelineParser
             "multicast"          => ParseMulticastBody(m, id, c),
             "join"               => ParseJoinBody(m, id, c),
             "pivot"              => ParsePivotBody(m, id, c),
+            "audit"              => ParseAuditBody(m, id, c),
             "unpivot"            => ParseUnpivotBody(m, id, c),
             "lookup"             => ParseLookupBody(m, id, c, providerHint: null),
             "sql.execute"        => ParseSqlExecuteBody(m, id, c),
@@ -543,6 +544,15 @@ internal sealed class PipelineParser
         NameColumn = ReqStr(m, "name_col", c),
         ValueColumn = ReqStr(m, "value_col", c),
     };
+
+    private AuditStep ParseAuditBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var from = ReqStr(m, "from", c);
+        var cols = ParseKeyValueStringMap(m, "columns", c, $"audit '{id}'");
+        if (cols.Count == 0)
+            throw new PipelineLoadException($"audit '{id}': 'columns' must list at least one column.");
+        return new AuditStep { Id = id, From = from, Columns = cols };
+    }
 
     private LookupStep ParseLookupBody(YamlMappingNode m, string id, HashSet<string> c, string? providerHint)
     {

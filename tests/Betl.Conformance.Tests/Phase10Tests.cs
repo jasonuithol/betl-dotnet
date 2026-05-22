@@ -94,4 +94,84 @@ public sealed class Phase10Tests
         var ex = Assert.Throws<PipelineLoadException>(() => PipelineLoader.Load(yaml));
         Assert.Contains("missing", ex.Message);
     }
+
+    // ----- audit ----------------------------------------------------------
+
+    private static void AssertFileMatches(string expectedPath, string actualPath)
+    {
+        var expected = File.ReadAllText(expectedPath).Replace("\r\n", "\n").TrimEnd('\n');
+        var actual = File.ReadAllText(actualPath).Replace("\r\n", "\n").TrimEnd('\n');
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void Audit_appends_string_columns_with_substituted_values_to_every_row()
+    {
+        var dir = FixtureDir("audit");
+        var outCsv = Path.Combine(Path.GetTempPath(), $"p10b-{Guid.NewGuid():N}.csv");
+        try
+        {
+            var (p, e, sql) = Load("audit");
+            Run(p, e, sql, new() { ["out"] = outCsv, ["run_id"] = "r-001" });
+            AssertFileMatches(Path.Combine(dir, "expected.csv"), outCsv);
+        }
+        finally { if (File.Exists(outCsv)) File.Delete(outCsv); }
+    }
+
+    [Fact]
+    public void Audit_rejects_column_name_that_shadows_upstream()
+    {
+        var yaml = """
+            betl: 1
+            name: bad
+            pipeline:
+              - id: df
+                type: dataflow
+                steps:
+                  - id: gen
+                    type: betl.gen_int64
+                    n: 1
+                  - id: a
+                    type: audit
+                    from: gen
+                    columns:
+                      n: "oops"
+                  - id: w
+                    type: csv.write
+                    from: a
+                    path: /tmp/never.csv
+            """;
+        var p = PipelineLoader.Load(yaml);
+        var ctx = ParameterContext.Build(p, new Dictionary<string, string>());
+        var engines = new EngineRegistry().Register(new SsisExpressionEngine());
+        var sqlReg = new ConnectionRegistry().Register(new SqliteProvider());
+        var ex = Assert.Throws<BetlException>(() => new Executor(p, ctx, engines, sqlReg).Run());
+        Assert.Contains("shadows an upstream column", ex.Message);
+    }
+
+    [Fact]
+    public void Audit_rejects_empty_columns_at_load_time()
+    {
+        var yaml = """
+            betl: 1
+            name: bad
+            pipeline:
+              - id: df
+                type: dataflow
+                steps:
+                  - id: gen
+                    type: betl.gen_int64
+                    n: 1
+                  - id: a
+                    type: audit
+                    from: gen
+                    columns: {}
+                  - id: w
+                    type: csv.write
+                    from: a
+                    path: /tmp/never.csv
+            """;
+        var ex = Assert.Throws<PipelineLoadException>(() => PipelineLoader.Load(yaml));
+        Assert.Contains("must list at least one column", ex.Message);
+    }
 }

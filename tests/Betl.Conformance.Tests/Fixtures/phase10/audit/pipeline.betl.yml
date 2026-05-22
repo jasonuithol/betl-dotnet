@@ -1,0 +1,27 @@
+betl: 1
+name: phase10-audit
+description: Generate three rows, stamp them with audit columns (run_id from a param, plus a fixed source-file string), write to CSV.
+
+parameters:
+  out:     { type: string, required: true }
+  run_id:  { type: string, required: true }
+
+pipeline:
+  - id: stamp_flow
+    type: dataflow
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 3
+
+      - id: stamp
+        type: audit
+        from: gen
+        columns:
+          run_id:      "${params.run_id}"
+          source_file: "orders-today.csv"
+
+      - id: write
+        type: csv.write
+        from: stamp
+        path: ${params.out}

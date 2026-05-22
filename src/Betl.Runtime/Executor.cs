@@ -278,6 +278,16 @@ public sealed partial class Executor
                     Log($"   {a.Id}: aggregate group_by=[{string.Join(", ", a.GroupBy)}] compute={a.Compute.Count}");
                     break;
                 }
+                case AuditStep au:
+                {
+                    var u = ResolveFrom(ports, au.From, au.Id, "audit.from");
+                    var resolved = au.Columns
+                        .Select(kv => KeyValuePair.Create(kv.Key, _params.Substitute(kv.Value)))
+                        .ToList();
+                    RegisterPort(ports, au.Id, new AuditComponent(au, u, resolved));
+                    Log($"   {au.Id}: audit columns=[{string.Join(", ", au.Columns.Select(kv => kv.Key))}]");
+                    break;
+                }
                 case PivotStep pv:
                 {
                     var u = ResolveFrom(ports, pv.From, pv.Id, "pivot.from");
