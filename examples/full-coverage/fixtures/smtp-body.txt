@@ -1,0 +1,5 @@
+The full-coverage pipeline run completed.
+
+This message body lives in a file because the pipeline parser reserves
+the stage-level `body:` key for `type: foreach` — task components that
+take a body (smtp.send, http.post) read it from `body_file:` instead.

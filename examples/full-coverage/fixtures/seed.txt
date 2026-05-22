@@ -1,0 +1,3 @@
+betl full-coverage integration test seed file.
+This is the dummy file the pipeline copies / moves / deletes to
+exercise file.copy / file.move / file.delete.

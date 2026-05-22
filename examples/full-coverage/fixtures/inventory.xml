@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Vendor metric feed. Each <vendor> entry contributes one row to
+     warehouse.vendor_metrics via xml.read -> postgres.upsert. -->
+<inventory generated="2026-05-20T08:00:00Z">
+  <vendor sku="SKU-001" vendor="V-NA-02">
+    <rating>4</rating>
+    <last_review>2026-05-12 14:30:00</last_review>
+  </vendor>
+  <vendor sku="SKU-002" vendor="V-EU-01">
+    <rating>5</rating>
+    <last_review>2026-04-30 09:11:22</last_review>
+  </vendor>
+  <vendor sku="SKU-003" vendor="V-EU-01">
+    <rating>3</rating>
+    <last_review>2026-05-02 16:45:00</last_review>
+  </vendor>
+  <vendor sku="SKU-004" vendor="V-AP-03">
+    <rating>4</rating>
+    <last_review>2026-05-18 11:00:00</last_review>
+  </vendor>
+  <vendor sku="SKU-005" vendor="V-AP-03">
+    <rating>5</rating>
+    <last_review>2026-05-19 08:22:33</last_review>
+  </vendor>
+</inventory>

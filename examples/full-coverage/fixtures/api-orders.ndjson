@@ -1,0 +1,4 @@
+{"order_id":9101,"customer_id":1001,"sku":"SKU-001","qty":2,"unit_price":39.99,"ordered_at":"2026-05-20T14:02:00Z","source":"api"}
+{"order_id":9102,"customer_id":1002,"sku":"SKU-004","qty":3,"unit_price":18.00,"ordered_at":"2026-05-20T14:15:00Z","source":"api"}
+{"order_id":9103,"customer_id":1003,"sku":"SKU-002","qty":1,"unit_price":24.50,"ordered_at":"2026-05-20T14:35:11Z","source":"api"}
+{"order_id":9104,"customer_id":1005,"sku":"SKU-005","qty":4,"unit_price":22.40,"ordered_at":"2026-05-20T14:48:00Z","source":"api"}
