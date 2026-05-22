@@ -182,6 +182,28 @@ Still deferred: full `RecordBatch` data-plane rewrite (gated on
 `ssisexpr` type inference), `Decimal128` scale > 28, locale-aware
 numeric parsing, `@[User::Foo]` variable refs in `ssisexpr`.
 
+## Install
+
+`Betl.Cli` is `<PackAsTool>`-packable as a .NET global tool. Until the
+preview package is on NuGet, install from a local pack:
+
+```sh
+dotnet pack -c Release src/Betl.Cli/Betl.Cli.csproj
+dotnet tool install -g \
+    --add-source src/Betl.Cli/bin/Release \
+    Betl.Dotnet --version 0.10.0-preview1
+```
+
+That installs the `betl-dotnet` command on PATH. The dash form
+disambiguates from `betl.native`'s `betl` binary so the two runtimes
+can coexist.
+
+End-to-end install (runtime + tools + UI), see
+[betl-tools/INSTALL.md][install]. It covers both the Linux/macOS
+container path and this native-Windows path.
+
+[install]: https://github.com/jasonuithol/betl-tools/blob/main/INSTALL.md
+
 ## Build
 
 Requires the .NET 9 SDK (`global.json` pins 9.0.314).
