@@ -41,6 +41,11 @@ public sealed partial class Executor
 
     private void RunControlStep(Step step)
     {
+        if (step.Condition is not null && !EvaluateCondition(step.Condition, step.Id))
+        {
+            Log($"-- skipping '{step.Id}' (condition is false)");
+            return;
+        }
         switch (step)
         {
             case DataflowStep df:    RunDataflow(df); break;
@@ -537,6 +542,33 @@ public sealed partial class Executor
             expr = new LiteralExpression(_params.Substitute(s));
         return _engines.Compile(expr, inputSchema);
     }
+
+    /// <summary>
+    /// Evaluates a step-level <c>condition:</c>. Supports literal booleans
+    /// and literal strings (after <c>${params.X}</c> / <c>${vars.X}</c>
+    /// substitution, parsed as bool). LangExpression conditions are
+    /// rejected with a clear message — they'd need a row-free expression
+    /// compile path the engines don't currently expose.
+    /// </summary>
+    private bool EvaluateCondition(Expression expr, string stepId) => expr switch
+    {
+        LiteralExpression { Value: bool b } => b,
+        LiteralExpression { Value: string s } => ParseConditionBool(_params.Substitute(s), stepId),
+        LiteralExpression { Value: null } => false,
+        LangExpression le => throw new BetlException(
+            $"Step '{stepId}': condition with lang '{le.Lang}' is not supported yet — " +
+            "use a literal bool / yes-no string, or a ${{params.X}}-substituted scalar."),
+        _ => throw new BetlException($"Step '{stepId}': unknown condition expression type."),
+    };
+
+    private static bool ParseConditionBool(string s, string stepId) => s.ToLowerInvariant() switch
+    {
+        "true" or "yes" or "1" or "on" => true,
+        "false" or "no" or "0" or "off" or "" => false,
+        _ => throw new BetlException(
+            $"Step '{stepId}': condition resolved to '{s}', which isn't a recognised boolean " +
+            "(expected true/false/yes/no/1/0/on/off)."),
+    };
 
     /// <summary>
     /// Mirror of the <see cref="Compile"/> substitution path for select-column

@@ -169,6 +169,72 @@ public sealed class Phase10Tests
         finally { if (File.Exists(outCsv)) File.Delete(outCsv); }
     }
 
+    // ----- condition: gating ---------------------------------------------
+
+    [Theory]
+    [InlineData("false", true)]   // condition false  -> step skipped, file NOT written
+    [InlineData("no",    true)]
+    [InlineData("0",     true)]
+    [InlineData("true",  false)]  // condition true   -> step runs, file IS written
+    [InlineData("yes",   false)]
+    [InlineData("1",     false)]
+    public void Condition_gates_top_level_step_execution(string param, bool shouldBeSkipped)
+    {
+        var outFile = Path.Combine(Path.GetTempPath(), $"p10-cond-{Guid.NewGuid():N}.txt");
+        try
+        {
+            var yaml = $$"""
+                betl: 1
+                name: cond-gate
+                parameters:
+                  out:  { type: string, required: true }
+                  flag: { type: string, required: true }
+                pipeline:
+                  - id: t
+                    type: dotnet.task
+                    condition: ${params.flag}
+                    source: |
+                      public class WriteTask : BetlTask
+                      {
+                          public override void Execute(BetlTaskContext ctx)
+                          {
+                              System.IO.File.WriteAllText((string)ctx.Params["out"]!, "ran");
+                          }
+                      }
+                """;
+            var p = PipelineLoader.Load(yaml);
+            var ctx = ParameterContext.Build(p, new Dictionary<string, string>
+            {
+                ["out"] = outFile,
+                ["flag"] = param,
+            });
+            new Executor(p, ctx,
+                new EngineRegistry().Register(new SsisExpressionEngine()),
+                new ConnectionRegistry().Register(new SqliteProvider())).Run();
+            Assert.Equal(shouldBeSkipped, !File.Exists(outFile));
+        }
+        finally { if (File.Exists(outFile)) File.Delete(outFile); }
+    }
+
+    [Fact]
+    public void Condition_with_LangExpression_throws_with_clear_message()
+    {
+        var yaml = """
+            betl: 1
+            name: cond-lang
+            pipeline:
+              - id: t
+                type: shell
+                argv: ["/bin/true"]
+                condition: { lang: ssisexpr, expr: "1 == 1" }
+            """;
+        var p = PipelineLoader.Load(yaml);
+        var ctx = ParameterContext.Build(p, new Dictionary<string, string>());
+        var ex = Assert.Throws<BetlException>(() => new Executor(p, ctx,
+            new EngineRegistry().Register(new SsisExpressionEngine())).Run());
+        Assert.Contains("condition with lang 'ssisexpr' is not supported", ex.Message);
+    }
+
     // ----- generator naming compat ---------------------------------------
 
     [Theory]

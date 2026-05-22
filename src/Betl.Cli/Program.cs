@@ -70,18 +70,17 @@ internal static class Program
         var path = argv[0];
         var yamlText = File.ReadAllText(path);
 
-        var schemaErrors = SchemaValidator.Validate(yamlText);
-        if (schemaErrors.Count > 0)
-        {
-            Console.Error.WriteLine($"schema errors in '{path}':");
-            foreach (var e in schemaErrors) Console.Error.WriteLine($"  - {e}");
-            return 1;
-        }
-
-        // Typed-parse adds the semantic checks the JSON Schema cannot express
-        // (Lua rejection, unknown step bodies, etc.). Plugin step types are
-        // honored during validation too so users see consistent errors
-        // between `betl validate` and `betl run`.
+        // SchemaValidator (embedded JSON Schema) is intentionally NOT called
+        // here. The schema is the original upstream contract circa Phase 1
+        // and lags behind the typed parser by ~20 step types (var.set, audit,
+        // multicast, conditional_split, xml.read, xlsx.*, dotnet.*, the
+        // Phase 10 SQL extensions, generators…) plus `ssisexpr` as a lang.
+        // Re-enabling it would reject most modern pipelines.
+        //
+        // The typed PipelineLoader is the authoritative source of truth —
+        // it knows every supported step type, lang, and shape, and its
+        // errors point at the exact YAML key. Plugin step types are honored
+        // here so `validate` and `run` agree on what's legal.
         var plugins = PluginRegistry.Discover();
         var pipeline = PipelineLoader.Load(yamlText, plugins.StepTypes);
         Console.WriteLine(
