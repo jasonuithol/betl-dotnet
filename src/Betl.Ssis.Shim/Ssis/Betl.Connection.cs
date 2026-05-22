@@ -1,7 +1,7 @@
 namespace Betl;
 
 /// <summary>
-/// Stub for the upstream <c>Betl.Connection</c> bridge that real betl.linux
+/// Stub for the upstream <c>Betl.Connection</c> bridge that real betl.native
 /// satisfies via a C function-pointer back to the host's <c>connections:</c>
 /// block. In managed betl.dotnet, the driver (<c>DotnetPipelineComponent</c>)
 /// installs a <see cref="Resolver"/> before invoking user code that resolves

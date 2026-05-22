@@ -2,7 +2,7 @@
 
 A pure-.NET implementation of [betl](https://github.com/jasonuithol/betl) — the
 "Better ETL" YAML-driven ETL runtime — targeting **100% pipeline-file
-compatibility** with `betl.linux`.
+compatibility** with `betl.native`.
 
 The runtime-neutral contract (file format, step semantics, type system,
 validation rules) is defined by [`SPEC_CORE.md`][spec-core] in the upstream
@@ -10,7 +10,7 @@ repo; `betl.dotnet` is a second reference implementation of that contract.
 
 [spec-core]: https://github.com/jasonuithol/betl/blob/main/SPEC_CORE.md
 
-## What's the same as `betl.linux`
+## What's the same as `betl.native`
 
 - YAML pipeline files are byte-for-byte interchangeable for the supported
   step type set.

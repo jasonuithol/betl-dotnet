@@ -1,7 +1,7 @@
 /* PipelineBuffer — the row-batch façade SSIS PipelineComponents
  * use to read/write rows during ProcessInput.
  *
- * Lifted from upstream betl.linux (providers/betl-dotnet/shim/
+ * Lifted from upstream betl.native (providers/betl-dotnet/shim/
  * pipelinecomponent/PipelineBuffer.cs) — the abstract base class is
  * preserved verbatim so SSIS-derived source compiles unchanged.
  * The concrete implementations below are rewritten for the managed

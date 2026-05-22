@@ -1,7 +1,7 @@
 namespace Betl;
 
 /// <summary>
-/// Stub for the upstream <c>Betl.Log</c> bridge. In real betl.linux this calls
+/// Stub for the upstream <c>Betl.Log</c> bridge. In real betl.native this calls
 /// back into the C-side log pipeline. In managed betl.dotnet, the driver
 /// installs a <see cref="Sink"/> before invoking user code; calls from inside
 /// user code route there. With no sink installed, messages are dropped.

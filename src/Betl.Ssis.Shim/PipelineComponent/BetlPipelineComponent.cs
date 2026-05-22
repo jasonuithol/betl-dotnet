@@ -8,7 +8,7 @@ namespace Betl.Ssis.Shim.PipelineComponent;
 /// but a simplified API surface backed by <see cref="BetlPipelineBuffer"/>.
 /// Suitable for new code and straightforward SSIS ports. The full
 /// <c>Microsoft.SqlServer.Dts.Pipeline.*</c> compatibility shim from upstream
-/// betl.linux is a separate lift (deferred).
+/// betl.native is a separate lift (deferred).
 /// </summary>
 public abstract class BetlPipelineComponent
 {
