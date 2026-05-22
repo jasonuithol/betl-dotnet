@@ -37,6 +37,20 @@ internal static class Program
             Console.Error.WriteLine($"error: {ex.Message}");
             return 1;
         }
+        catch (Exception ex)
+        {
+            // Provider exceptions (Npgsql, Microsoft.Data.SqlClient,
+            // HttpRequestException, IO errors, …) shouldn't surface as raw
+            // unhandled-exception stack dumps to end users. Render them as
+            // a one-line error: with the exception type for context, and
+            // attach the full stack trace only when BETL_TRACE is set so
+            // diagnosis is still possible without surprising the casual
+            // user. Exit 1 stays consistent with the BetlException branch.
+            Console.Error.WriteLine($"error ({ex.GetType().Name}): {ex.Message}");
+            if (Environment.GetEnvironmentVariable("BETL_TRACE") is not null)
+                Console.Error.WriteLine(ex.ToString());
+            return 1;
+        }
     }
 
     private static int Run(string[] argv)
