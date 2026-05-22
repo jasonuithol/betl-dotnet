@@ -51,16 +51,20 @@ parameters:
     doc: Logical "today" — drives ordered_at filtering + load_date column.
   src_dir:
     type: string
-    default: examples/full-coverage/fixtures
-    doc: Directory containing CSV / XML / NDJSON fixtures (relative to CWD).
+    default: fixtures
+    doc: >
+      Directory containing CSV / XML / NDJSON fixtures. Resolved relative
+      to the directory the engine is launched from. The yaml-ui sets that
+      to the YAML file's directory, so the default "fixtures" picks up
+      ./examples/full-coverage/fixtures automatically.
   out_dir:
     type: string
-    default: examples/full-coverage/out
-    doc: Where csv.write / xlsx.write / json.write land their files.
+    default: out
+    doc: Where csv.write / xlsx.write / json.write land their files (relative to launch dir).
   tmp_dir:
     type: string
-    default: examples/full-coverage/tmp
-    doc: Scratch directory for file.copy / file.move / file.delete demos.
+    default: tmp
+    doc: Scratch directory for file.copy / file.move / file.delete demos (relative to launch dir).
   batch_label:
     type: string
     required: true
