@@ -414,6 +414,14 @@ public sealed partial class Executor
                     Log($"   {up.Id}: {up.ProviderHint}.upsert table={up.Table}");
                     break;
                 }
+                case PostgresCopyStep pc:
+                {
+                    var u = ResolveFrom(ports, pc.From, pc.Id, "postgres.copy.from");
+                    var (_, dsn) = ResolveConnection(pc.Connection, $"postgres.copy '{pc.Id}'");
+                    sinks.Add((new PostgresCopySink(pc, dsn), u));
+                    Log($"   {pc.Id}: postgres.copy table={pc.Table}" + (pc.Truncate ? " (truncate)" : ""));
+                    break;
+                }
 
                 case PluginStep ps:
                 {

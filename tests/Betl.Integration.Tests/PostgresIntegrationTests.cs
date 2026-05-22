@@ -49,4 +49,32 @@ public sealed class PostgresIntegrationTests : IClassFixture<PostgresFixture>
             if (File.Exists(outPath)) File.Delete(outPath);
         }
     }
+
+    [SkippableFact]
+    public void Postgres_copy_append_and_truncate_modes_against_real_postgres()
+    {
+        Skip.IfNot(_pg.Available, $"Postgres unreachable at {_pg.MaintenanceDsn}.");
+
+        var dir = FixtureDir("postgres-copy");
+        var outPath = Path.Combine(Path.GetTempPath(), $"it-pg-copy-{Guid.NewGuid():N}.csv");
+        try
+        {
+            var pipeline = PipelineLoader.LoadFile(Path.Combine(dir, "pipeline.betl.yml"));
+            var engines = new EngineRegistry().Register(new SsisExpressionEngine());
+            var sql = new ConnectionRegistry().Register(new PostgresProvider());
+            var ctx = ParameterContext.Build(pipeline, new Dictionary<string, string>
+            {
+                ["dsn"] = _pg.TestDsn,
+                ["out"] = outPath,
+            });
+
+            new Executor(pipeline, ctx, engines, sql).Run();
+
+            AssertFileMatches(Path.Combine(dir, "expected.csv"), outPath);
+        }
+        finally
+        {
+            if (File.Exists(outPath)) File.Delete(outPath);
+        }
+    }
 }

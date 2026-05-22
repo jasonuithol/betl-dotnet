@@ -177,6 +177,8 @@ internal sealed class PipelineParser
             "betl.gen_int64"     => ParseGenInt64Body(m, id, c),
             "betl.gen_strings"   => ParseGenStringsBody(m, id, c),
             "betl.count_rows"    => ParseCountRowsBody(m, id, c),
+            "postgres.copy"      => ParsePostgresCopyBody(m, id, c),
+            "mssql.bulkinsert"   => ParseMsSqlBulkInsertBody(m, id, c),
             _ when type.EndsWith(".read",   StringComparison.Ordinal) => ParseSqlReadBody(m, id, c, type[..^".read".Length]),
             _ when type.EndsWith(".upsert", StringComparison.Ordinal) => ParseSqlUpsertBody(m, id, c, type[..^".upsert".Length]),
             _ when type.EndsWith(".lookup", StringComparison.Ordinal) => ParseLookupBody(m, id, c, providerHint: type[..^".lookup".Length]),
@@ -573,6 +575,35 @@ internal sealed class PipelineParser
                 var v => throw new PipelineLoadException($"lookup '{id}': unknown on_miss '{v}'."),
             },
         };
+        return step;
+    }
+
+    private PostgresCopyStep ParsePostgresCopyBody(YamlMappingNode m, string id, HashSet<string> c) => new()
+    {
+        Id = id,
+        From = ReqStr(m, "from", c),
+        Connection = ReqStr(m, "connection", c),
+        Table = ReqStr(m, "table", c),
+        Truncate = OptBool(m, "truncate", c) ?? false,
+        Columns = OptStrList(m, "columns", c) is { Count: > 0 } cols ? cols : null,
+    };
+
+    private MsSqlBulkInsertStep ParseMsSqlBulkInsertBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        // upstream accepts a `mode:` key (array / table); we currently only
+        // implement the row-by-row binary path SqlBulkCopy gives, which matches
+        // both modes externally — accept and ignore the key for compatibility.
+        var step = new MsSqlBulkInsertStep
+        {
+            Id = id,
+            From = ReqStr(m, "from", c),
+            Connection = ReqStr(m, "connection", c),
+            Table = ReqStr(m, "table", c),
+            Truncate = OptBool(m, "truncate", c) ?? false,
+            BatchSize = OptInt(m, "batch_size", c) ?? 1000,
+            Columns = OptStrList(m, "columns", c) is { Count: > 0 } cols ? cols : null,
+        };
+        OptStr(m, "mode", c); // tolerated, no-op
         return step;
     }
 

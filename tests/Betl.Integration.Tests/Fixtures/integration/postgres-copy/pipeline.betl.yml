@@ -1,0 +1,85 @@
+betl: 1
+name: integration-postgres-copy
+description: >
+  Exercises postgres.copy in both append (truncate:false) and truncate
+  (truncate:true) modes. After the load completes, postgres.read pulls the
+  rows back and csv.write emits them for golden comparison.
+
+parameters:
+  dsn: { type: string, required: true }
+  out: { type: string, required: true }
+
+connections:
+  warehouse:
+    type: postgres
+    dsn: ${params.dsn}
+
+pipeline:
+  - id: ddl
+    type: sql.execute
+    connection: warehouse
+    sql: |
+      DROP TABLE IF EXISTS staging_copy;
+      CREATE TABLE staging_copy (seq INTEGER NOT NULL, payload TEXT NOT NULL);
+      INSERT INTO staging_copy VALUES (-1, 'should-survive-append');
+
+  - id: append_three
+    type: dataflow
+    after: [ddl]
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 3
+        column: seq
+        start: 0
+      - id: stamp
+        type: map
+        from: gen
+        select:
+          - seq
+          - name: payload
+            lang: literal
+            value: "appended"
+      - id: write
+        type: postgres.copy
+        from: stamp
+        connection: warehouse
+        table: staging_copy
+        truncate: false
+
+  - id: replace_two
+    type: dataflow
+    after: [append_three]
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 2
+        column: seq
+        start: 100
+      - id: stamp
+        type: map
+        from: gen
+        select:
+          - seq
+          - name: payload
+            lang: literal
+            value: "replaced"
+      - id: write
+        type: postgres.copy
+        from: stamp
+        connection: warehouse
+        table: staging_copy
+        truncate: true
+
+  - id: read_back
+    type: dataflow
+    after: [replace_two]
+    steps:
+      - id: rd
+        type: postgres.read
+        connection: warehouse
+        sql: SELECT seq, payload FROM staging_copy ORDER BY seq
+      - id: write
+        type: csv.write
+        from: rd
+        path: ${params.out}

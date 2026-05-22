@@ -244,6 +244,34 @@ public sealed record SqlUpsertStep : Step
     public int BatchSize { get; init; } = 1000;
 }
 
+/// <summary>
+/// Postgres append-only fast path via the binary COPY protocol. Significantly
+/// faster than <see cref="SqlUpsertStep"/> for fresh-load workloads. Optional
+/// <c>Truncate</c> empties the table first (TRUNCATE … CASCADE-free).
+/// </summary>
+public sealed record PostgresCopyStep : Step
+{
+    public required string From { get; init; }
+    public required string Connection { get; init; }
+    public required string Table { get; init; }
+    public bool Truncate { get; init; }
+    public IReadOnlyList<string>? Columns { get; init; }
+}
+
+/// <summary>
+/// MS SQL bulk insert via SqlBulkCopy. Comparable to <see cref="PostgresCopyStep"/>
+/// for the MS SQL side. Optional <c>Truncate</c> empties the destination first.
+/// </summary>
+public sealed record MsSqlBulkInsertStep : Step
+{
+    public required string From { get; init; }
+    public required string Connection { get; init; }
+    public required string Table { get; init; }
+    public bool Truncate { get; init; }
+    public int BatchSize { get; init; } = 1000;
+    public IReadOnlyList<string>? Columns { get; init; }
+}
+
 public enum LookupMiss { Error, Null, Drop }
 
 public sealed record LookupStep : Step
