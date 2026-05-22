@@ -99,19 +99,4 @@ public sealed class Phase45Tests
         finally { if (File.Exists(outPath)) File.Delete(outPath); }
     }
 
-    [Fact]
-    public void Dtsx2yaml_simple_oledb_fixture_converts_to_yaml()
-    {
-        var fixture = Path.Combine(AppContext.BaseDirectory, "Fixtures", "dtsx2yaml", "simple-oledb.dtsx");
-        Assert.True(File.Exists(fixture), $"missing fixture {fixture}");
-        var outPath = Path.Combine(Path.GetTempPath(), $"dtsx-{Guid.NewGuid():N}.yml");
-        try
-        {
-            var rc = Betl.Dtsx2Yaml.Program.Main([fixture, "-o", outPath]);
-            Assert.Equal(0, rc);
-            var yaml = File.ReadAllText(outPath);
-            Assert.Contains("betl: 1", yaml);
-        }
-        finally { if (File.Exists(outPath)) File.Delete(outPath); }
-    }
 }

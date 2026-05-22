@@ -26,7 +26,12 @@ repo; `betl.dotnet` is a second reference implementation of that contract.
   libpq / unixODBC).
 - `dotnet.task`, `dotnet.script`, `dotnet.pipelinecomponent` (the SSIS
   PipelineComponent shim is lifted from `providers/betl-dotnet/shim/`).
-- `betl-dtsx2yaml` (lifted from `tools/betl-dtsx2yaml/`).
+
+For migrating existing SSIS `.dtsx` packages to `.betl.yml`, use the
+[`betl-dtsx2yaml`][dtsx2yaml] tool from the upstream repo — it's already
+a standalone .NET 9 project and runs cross-platform.
+
+[dtsx2yaml]: https://github.com/jasonuithol/betl/tree/master/tools/betl-dtsx2yaml
 
 [apache-arrow]: https://github.com/apache/arrow/tree/main/csharp
 
@@ -156,7 +161,7 @@ Duplicate `StepType` registration across plugins is a startup error.
 Active development. As of writing (Phase 9), the runtime covers the
 spec-floor step set plus pivots, lookups, joins, JSON/Arrow I/O,
 async + error-output `dotnet.pipelinecomponent`, the full lifted
-`Microsoft.SqlServer.Dts.Pipeline.*` shim, `betl-dtsx2yaml`, parallel
+`Microsoft.SqlServer.Dts.Pipeline.*` shim, parallel
 queued execution, Postgres + MSSQL integration tests, BenchmarkDotNet
 harness, and the three extensibility levels above. SSIS-EL has ~30
 functions, ternary, and the full `(DT_*)` cast lattice. 127/127 tests
