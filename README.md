@@ -1,6 +1,6 @@
 # betl.dotnet
 
-A pure-.NET implementation of [betl](https://github.com/jasonuithol/betl) — the
+A pure-.NET implementation of [betl](https://github.com/jasonuithol/betl-native) — the
 "Better ETL" YAML-driven ETL runtime — targeting **100% pipeline-file
 compatibility** with `betl.native`.
 
@@ -8,7 +8,7 @@ The runtime-neutral contract (file format, step semantics, type system,
 validation rules) is defined by [`SPEC_CORE.md`][spec-core] in the upstream
 repo; `betl.dotnet` is a second reference implementation of that contract.
 
-[spec-core]: https://github.com/jasonuithol/betl/blob/main/SPEC_CORE.md
+[spec-core]: https://github.com/jasonuithol/betl-native/blob/master/SPEC_CORE.md
 
 ## What's the same as `betl.native`
 
@@ -33,10 +33,11 @@ repo; `betl.dotnet` is a second reference implementation of that contract.
   PipelineComponent shim is lifted from `providers/betl-dotnet/shim/`).
 
 For migrating existing SSIS `.dtsx` packages to `.betl.yml`, use the
-[`betl-dtsx2yaml`][dtsx2yaml] tool from the upstream repo — it's already
-a standalone .NET 9 project and runs cross-platform.
+[`betl-dtsx2yaml`][dtsx2yaml] tool from the [betl-tools][betl-tools] repo
+— a standalone .NET 9 project that runs cross-platform.
 
-[dtsx2yaml]: https://github.com/jasonuithol/betl/tree/master/tools/betl-dtsx2yaml
+[betl-tools]: https://github.com/jasonuithol/betl-tools
+[dtsx2yaml]: https://github.com/jasonuithol/betl-tools/tree/main/betl-dtsx2yaml
 
 [apache-arrow]: https://github.com/apache/arrow/tree/main/csharp
 
