@@ -1,0 +1,50 @@
+betl: 1
+name: phase10-var-set-sql
+description: Set a variable from a SQL query (first column of first row), then surface it in a CSV write through a literal-expression column.
+
+parameters:
+  db: { type: string, required: true }
+  out: { type: string, required: true }
+
+connections:
+  bag:
+    type: sqlite
+    dsn: "Data Source=${params.db};Pooling=False"
+
+pipeline:
+  - id: seed
+    type: sql.execute
+    connection: bag
+    sql: |
+      CREATE TABLE IF NOT EXISTS bag(key TEXT PRIMARY KEY, val TEXT NOT NULL);
+      DELETE FROM bag;
+      INSERT INTO bag(key, val) VALUES ('the_answer', '42');
+
+  - id: read_answer
+    type: var.set
+    name: answer
+    connection: bag
+    sql: SELECT val FROM bag WHERE key = 'the_answer'
+    after: [seed]
+
+  - id: emit
+    type: dataflow
+    after: [read_answer]
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 1
+
+      - id: stamp
+        type: map
+        from: gen
+        select:
+          - n
+          - name: answer
+            lang: literal
+            value: "${vars.answer}"
+
+      - id: write
+        type: csv.write
+        from: stamp
+        path: ${params.out}

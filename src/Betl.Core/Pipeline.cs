@@ -368,6 +368,20 @@ public sealed record PluginStep : Step
     public required IReadOnlyDictionary<string, object?> Body { get; init; }
 }
 
+/// <summary>
+/// Binds <c>${vars.&lt;name&gt;}</c> for the remainder of the pipeline. Two modes:
+/// literal (<c>value:</c>) and SQL (<c>connection:</c> + <c>sql:</c>, takes the
+/// first column of the first row). Unlike foreach's loop variable, the binding
+/// is not scoped — once set, the value persists.
+/// </summary>
+public sealed record VarSetStep : Step
+{
+    public required string Name { get; init; }
+    public string? Value { get; init; }
+    public string? Connection { get; init; }
+    public string? Sql { get; init; }
+}
+
 public sealed record SmtpSendStep : Step
 {
     public required string Url { get; init; }

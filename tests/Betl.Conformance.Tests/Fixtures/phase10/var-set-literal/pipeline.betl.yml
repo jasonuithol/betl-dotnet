@@ -1,0 +1,35 @@
+betl: 1
+name: phase10-var-set-literal
+description: Set a variable from a literal value (with param substitution), then write a CSV column whose literal-expression value references the var.
+
+parameters:
+  out: { type: string, required: true }
+  prefix: { type: string, default: hello }
+
+pipeline:
+  - id: set_label
+    type: var.set
+    name: label
+    value: "${params.prefix}-world"
+
+  - id: emit
+    type: dataflow
+    after: [set_label]
+    steps:
+      - id: gen
+        type: betl.gen_int64
+        n: 1
+
+      - id: stamp
+        type: map
+        from: gen
+        select:
+          - n
+          - name: label
+            lang: literal
+            value: "${vars.label}"
+
+      - id: write
+        type: csv.write
+        from: stamp
+        path: ${params.out}

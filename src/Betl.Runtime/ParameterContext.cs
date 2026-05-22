@@ -74,6 +74,13 @@ public sealed partial class ParameterContext
         return new VarPop(_vars, name);
     }
 
+    /// <summary>
+    /// Permanently binds <c>${vars.&lt;name&gt;}</c> for the rest of the pipeline.
+    /// Used by <c>var.set</c>. Re-setting an already-bound name overwrites it —
+    /// that matches upstream behavior and lets var.set inside a loop body refresh.
+    /// </summary>
+    public void SetVar(string name, string value) => _vars[name] = value;
+
     private sealed class VarPop(Dictionary<string, string> vars, string name) : IDisposable
     {
         public void Dispose() => vars.Remove(name);

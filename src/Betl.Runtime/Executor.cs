@@ -60,6 +60,7 @@ public sealed partial class Executor
             case SmtpSendStep sm:    RunSmtp(sm); break;
             case SqlExecuteStep se:  RunSqlExecute(se); break;
             case DotnetTaskStep dt:  RunDotnetTask(dt); break;
+            case VarSetStep vs:      RunVarSet(vs); break;
             case PluginStep ps:      RunPluginTask(ps); break;
             default:
                 throw new BetlException($"Top-level step type '{step.GetType().Name}' is not supported.");
@@ -130,6 +131,34 @@ public sealed partial class Executor
         merged.AddRange(substRefs);
         merged.AddRange(resolved);
         return merged;
+    }
+
+    private void RunVarSet(VarSetStep step)
+    {
+        string resolved;
+        if (step.Value is not null)
+        {
+            resolved = _params.Substitute(step.Value);
+            Log($"-> var.set '{step.Id}' {step.Name}=\"{resolved}\" (literal)");
+        }
+        else
+        {
+            var (provider, dsn) = ResolveConnection(step.Connection!, $"var.set '{step.Id}'");
+            var sql = _params.Substitute(step.Sql!);
+            using var conn = provider.OpenConnection(dsn);
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
+            var scalar = cmd.ExecuteScalar();
+            resolved = scalar switch
+            {
+                null => "",
+                DBNull => "",
+                _ => Convert.ToString(scalar, CultureInfo.InvariantCulture) ?? "",
+            };
+            Log($"-> var.set '{step.Id}' {step.Name}=\"{resolved}\" (from {step.Connection})");
+        }
+        _params.SetVar(step.Name, resolved);
     }
 
     private void RunSqlExecute(SqlExecuteStep step)
@@ -216,7 +245,8 @@ public sealed partial class Executor
                 case MapStep m:
                 {
                     var u = ResolveFrom(ports, m.From, m.Id, "map.from");
-                    RegisterPort(ports, m.Id, new MapComponent(m, u, e => Compile(e, u.OutputSchema)));
+                    var subbed = SubstituteMapLiterals(m);
+                    RegisterPort(ports, m.Id, new MapComponent(subbed, u, e => Compile(e, u.OutputSchema)));
                     Log($"   {m.Id}: map from={m.From}");
                     break;
                 }
@@ -454,6 +484,29 @@ public sealed partial class Executor
         if (expr is LiteralExpression lit && lit.Value is string s)
             expr = new LiteralExpression(_params.Substitute(s));
         return _engines.Compile(expr, inputSchema);
+    }
+
+    /// <summary>
+    /// Mirror of the <see cref="Compile"/> substitution path for select-column
+    /// literals: a YAML <c>{ lang: literal, value: "${vars.X}" }</c> entry inside
+    /// <c>map.select</c> should resolve placeholders just like the equivalent
+    /// entry under <c>map.add</c> does.
+    /// </summary>
+    private MapStep SubstituteMapLiterals(MapStep m)
+    {
+        if (m.Select is null) return m;
+        var any = false;
+        var next = new List<SelectColumn>(m.Select.Count);
+        foreach (var col in m.Select)
+        {
+            if (col is LiteralColumn { Value: string s } lc)
+            {
+                any = true;
+                next.Add(new LiteralColumn(lc.Name, _params.Substitute(s)));
+            }
+            else next.Add(col);
+        }
+        return any ? m with { Select = next } : m;
     }
 
     private static TimeSpan? ParseTimeout(string? s)

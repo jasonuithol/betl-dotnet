@@ -169,6 +169,7 @@ internal sealed class PipelineParser
             "http.get"           => ParseHttpGetBody(m, id, c),
             "http.post"          => ParseHttpPostBody(m, id, c),
             "smtp.send"          => ParseSmtpSendBody(m, id, c),
+            "var.set"            => ParseVarSetBody(m, id, c),
             "dotnet.task"        => ParseDotnetTaskBody(m, id, c),
             "dotnet.script"      => ParseDotnetScriptBody(m, id, c),
             "dotnet.pipelinecomponent" => ParseDotnetPipelineComponentBody(m, id, c),
@@ -791,6 +792,28 @@ internal sealed class PipelineParser
             body[k.Value] = YamlBodyConverter.ToObject(entry.Value);
         }
         return new PluginStep { Id = id, Type = type, Body = body };
+    }
+
+    private VarSetStep ParseVarSetBody(YamlMappingNode m, string id, HashSet<string> c)
+    {
+        var name = ReqStr(m, "name", c);
+        var value = OptStr(m, "value", c);
+        var connection = OptStr(m, "connection", c);
+        var sql = OptStr(m, "sql", c);
+
+        var hasLiteral = value is not null;
+        var hasSql = connection is not null || sql is not null;
+        if (hasLiteral && hasSql)
+            throw new PipelineLoadException(
+                $"var.set '{id}': specify either 'value:' (literal mode) OR 'connection:' + 'sql:' (query mode), not both.");
+        if (!hasLiteral && !hasSql)
+            throw new PipelineLoadException(
+                $"var.set '{id}': missing 'value:' (literal mode) or 'connection:' + 'sql:' (query mode).");
+        if (hasSql && (connection is null || sql is null))
+            throw new PipelineLoadException(
+                $"var.set '{id}': query mode requires both 'connection:' and 'sql:'.");
+
+        return new VarSetStep { Id = id, Name = name, Value = value, Connection = connection, Sql = sql };
     }
 
     private DotnetTaskStep ParseDotnetTaskBody(YamlMappingNode m, string id, HashSet<string> c) => new()
