@@ -32,6 +32,16 @@ internal static class ScalarCodec
                 StringType  => text.ToString(),
                 BooleanType => bool.Parse(text),
                 Date32Type  => DateOnly.ParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture),
+                // Accept the common timestamp shapes that appear in CSVs:
+                // - "2026-05-20 09:14:32"      (space-separated, no zone)
+                // - "2026-05-20T09:14:32"      (T-separated, no zone)
+                // - "2026-05-20T09:14:32Z"     (UTC marker)
+                // - "2026-05-20T09:14:32+1000" (with offset)
+                // The AssumeUniversal+AdjustToUniversal combo normalises
+                // everything to UTC DateTime so Npgsql sends it as
+                // timestamptz / Microsoft.Data.SqlClient as datetime2.
+                TimestampType => DateTime.Parse(text, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal),
                 _ => throw new BetlException($"CSV parse not implemented for Arrow type '{type.Name}'."),
             };
         }

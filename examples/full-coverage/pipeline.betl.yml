@@ -195,7 +195,7 @@ pipeline:
           - { name: sku,         type: string }
           - { name: qty,         type: int64 }
           - { name: unit_price,  type: float64 }
-          - { name: ordered_at,  type: string }
+          - { name: ordered_at,  type: "timestamp[us, UTC]" }
           - { name: source,      type: string }
 
       # Filter: drop qty=0 rows (real fixture has one).
@@ -375,7 +375,10 @@ pipeline:
           - sku
           - vendor
           - rating
-          - last_review
+          # xml.read emits utf8; cast to a real timestamp so Npgsql sends
+          # it as a typed parameter (Postgres won't auto-cast text bound
+          # parameters to TIMESTAMP).
+          - { name: last_review, lang: ssisexpr, expr: '(DT_DBTIMESTAMP) last_review' }
 
       - id: write
         type: postgres.upsert
@@ -406,7 +409,7 @@ pipeline:
             sku,
             to_char(ordered_at, 'YYYY-MM-DD') AS order_date,
             sum(qty)::int8 AS qty_total,
-            sum(line_total)::text AS revenue_text
+            sum(line_total) AS revenue
           FROM warehouse.daily_orders
           GROUP BY sku, to_char(ordered_at, 'YYYY-MM-DD')
           ORDER BY order_date, sku
@@ -435,10 +438,12 @@ pipeline:
         type: map
         from: lookup_product_name
         select:
-          - { name: load_date, from: order_date }
+          # order_date arrives as utf8 (to_char above); cast to DT_DBDATE so
+          # the typed parameter binds against the DATE destination column.
+          - { name: load_date, lang: ssisexpr, expr: '(DT_DBDATE) order_date' }
           - sku
           - qty_total
-          - { name: revenue, from: revenue_text }
+          - revenue
 
       - id: write
         type: postgres.upsert
@@ -683,7 +688,13 @@ pipeline:
   # betl.count_rows. Self-contained — generates its own input.
   # ===========================================================================
 
-  - id: xlsx_roundtrip
+  # The write + read_back halves are split into two dataflows so the
+  # `after:` ordering forces the write side to complete (and flush) before
+  # the read side opens the file. In a single dataflow the two halves
+  # would be independent disconnected graphs and drain concurrently —
+  # producing a race where read_back tries to open scratch.xlsx before
+  # write has produced it.
+  - id: xlsx_write
     type: dataflow
     after: [reshape_demo]
     steps:
@@ -695,6 +706,11 @@ pipeline:
         type: xlsx.write
         from: gen
         path: ${params.out_dir}/scratch.xlsx
+
+  - id: xlsx_roundtrip
+    type: dataflow
+    after: [xlsx_write]
+    steps:
       - id: read_back
         type: xlsx.read
         path: ${params.out_dir}/scratch.xlsx
@@ -715,9 +731,7 @@ pipeline:
     url: https://httpbin.org/get
     save_to: ${params.out_dir}/http-get.json
     headers: ["Accept: application/json"]
-    condition:
-      lang: ssisexpr
-      expr: 'enable_remote'
+    condition: ${params.enable_remote}
     after: [reshape_demo]
 
   - id: post_http
@@ -726,9 +740,7 @@ pipeline:
     save_to: ${params.out_dir}/http-post.json
     body_file: ${params.src_dir}/http-body.json
     headers: ["Content-Type: application/json"]
-    condition:
-      lang: ssisexpr
-      expr: 'enable_remote'
+    condition: ${params.enable_remote}
     after: [fetch_http]
 
   - id: notify_email
@@ -738,9 +750,7 @@ pipeline:
     to:   [ops@example.com]
     subject: "betl full-coverage run finished"
     body_file: ${params.src_dir}/smtp-body.txt
-    condition:
-      lang: ssisexpr
-      expr: 'enable_remote'
+    condition: ${params.enable_remote}
     after: [post_http]
 
   # ===========================================================================
@@ -829,7 +839,7 @@ pipeline:
     sql: |
       INSERT INTO dbo.run_summary (run_id, completed_at, stage_count, note)
       VALUES (NEWID(), SYSUTCDATETIME(), 42, '${vars.batch_ts}')
-    after: [build_order_facts, classify_routes, reshape_demo, xlsx_roundtrip,
+    after: [build_order_facts, classify_routes, reshape_demo, xlsx_write, xlsx_roundtrip,
             per_sku, run_shell, dotnet_hello]
 
   - id: close_audit

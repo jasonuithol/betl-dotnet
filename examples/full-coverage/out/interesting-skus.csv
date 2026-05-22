@@ -1,0 +1,2 @@
+sku,qty_total,revenue,load_date,on_hand,category,is_low,is_high
+SKU-003,7,69.65,2026-05-20,300,home,False,True
