@@ -4,6 +4,26 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>betl</AssemblyName>
     <RootNamespace>Betl.Cli</RootNamespace>
+
+    <!--
+      Distribute as a .NET global tool. After 'dotnet pack -c Release',
+      install via 'dotnet tool install -g Betl.Dotnet' (once published to
+      NuGet) or locally by passing the bin/Release nupkg via the
+      add-source flag. The installed command is 'betl-dotnet' (the dash
+      form disambiguates from the C engine 'betl' binary so both can
+      coexist on PATH).
+    -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>betl-dotnet</ToolCommandName>
+    <PackageId>Betl.Dotnet</PackageId>
+    <Version>0.10.0-preview1</Version>
+    <Authors>Jason Uithol</Authors>
+    <Description>Pure-.NET implementation of the betl YAML-driven ETL runtime; SPEC_CORE-conformant peer to betl.native.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/jasonuithol/betl-dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/jasonuithol/betl-dotnet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>etl;ssis;yaml;arrow;dotnet</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
